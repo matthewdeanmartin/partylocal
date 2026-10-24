@@ -1,0 +1,118 @@
+# Publish the party demo to GitHub Pages: Club House and the UI prototypes,
+# with the board faked in the browser and seeded with made-up data.
+#
+#   https://matthewdeanmartin.github.io/partylocal/            the landing page
+#   https://matthewdeanmartin.github.io/partylocal/clubhouse/  Club House, etc.
+#
+# party builds against miniframework from the microcontroller repository,
+# checked out next to this one (../microcontroller), so CI checks out both
+# side by side. The demo needs only the framework's Angular client.
+---
+name: Deploy party demo
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to publish (branch, tag, or commit SHA)
+        required: true
+        default: main
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - 'ui/**'
+      - 'tools/demo-*.mjs'
+      - 'Makefile'
+      - '.github/pages/**'
+      - '.github/workflows/pages.yml'
+
+# One deployment at a time. A second run while the first is publishing would
+# race it, and the loser silently wins.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and deploy the demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    env:
+      # Pages serves this repository at /partylocal/.
+      SITE: /partylocal/
+    steps:
+      - name: Check out partylocal
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          path: partylocal
+          persist-credentials: false
+
+      - name: Check out miniframework (from microcontroller, next to partylocal)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: matthewdeanmartin/microcontroller
+          path: microcontroller
+          sparse-checkout: miniframework/web/projects
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: partylocal/ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: partylocal/ui
+        run: npm ci
+
+      # Type checks for every UI, then the unit tests: the fake board's rules
+      # and seed, and that every message a UI decodes is in the wire schema.
+      - name: Test
+        working-directory: partylocal
+        run: make test-web
+
+      - name: Build the demo
+        working-directory: partylocal
+        run: make demo-build DEMO_BASE="${SITE#/}"
+
+      - name: Verify the built demo
+        run: |
+          cd partylocal/ui/dist/demo-local
+          test -f index.html
+          for ui in clubhouse classic chat calendar deck terminal gazette; do
+            test -f "$ui/index.html"
+            grep --fixed-strings "<base href=\"${SITE}$ui/\">" "$ui/index.html"
+            grep --quiet --fixed-strings '__p=' "$ui/index.html" \
+              || { echo "$ui: no deep-link restore script"; exit 1; }
+          done
+          # Proof the fake board was swapped in: the seeded neighbourhood
+          # exists only in demo builds. Without it the site would try to
+          # reach a board that isn't there.
+          grep --quiet --recursive 'Maple Street Neighbours' clubhouse \
+            || { echo 'not a demo build: the seeded board is missing'; exit 1; }
+
+      - name: Assemble the Pages site
+        run: |
+          mkdir -p .pages-site
+          cp -r partylocal/ui/dist/demo-local/. .pages-site/
+          cp partylocal/.github/pages/404.html .pages-site/
+          # Jekyll would otherwise ignore files beginning with an underscore.
+          touch .pages-site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .pages-site
+
+      - name: Deploy Pages
+        id: pages
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

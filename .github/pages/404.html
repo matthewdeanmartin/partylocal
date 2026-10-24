@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Not found</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      // GitHub Pages has one 404 page and no per-folder fallback. A deep link
+      // into a UI, /partylocal/<ui>/e/7, goes to /partylocal/<ui>/?__p=%2Fe%2F7,
+      // and the UI's index.html puts the route back (tools/demo-deep-links.mjs).
+      (function () {
+        var site = '/' + location.pathname.split('/')[1] + '/';
+        var rest = location.pathname.slice(site.length);
+        var m = /^([a-z]+)\/(.+)$/.exec(rest);
+        if (m) location.replace(site + m[1] + '/?__p=' + encodeURIComponent('/' + m[2] + location.search + location.hash));
+        else document.addEventListener('DOMContentLoaded', function () { document.getElementById('home').href = site; });
+      })();
+    </script>
+  </head>
+  <body style="font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 16px">
+    <h1>Not found</h1>
+    <p>Nothing lives at this address. <a id="home" href="/">Back to the party demo</a>.</p>
+  </body>
+</html>

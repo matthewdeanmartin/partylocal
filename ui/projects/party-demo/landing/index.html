@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>party demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎉%3C/text%3E%3C/svg%3E" />
+    <style>
+      :root { --bg: #f7f5f0; --card: #fff; --text: #1f1d1a; --muted: #6b665d; --line: #e2ddd3; color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #171614; --card: #22201d; --text: #ece8e1; --muted: #a39d92; --line: #38342f; } }
+      body { margin: 0; background: var(--bg); color: var(--text); }
+      main { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+      h1 { font-size: 34px; margin: 0 0 4px; }
+      p.lede { color: var(--muted); margin: 0 0 24px; max-width: 680px; }
+      ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+      a.ui { display: grid; gap: 6px; padding: 18px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); color: inherit; text-decoration: none; height: 100%; box-sizing: border-box; }
+      a.ui:hover { border-color: var(--text); }
+      a.ui b { font-size: 20px; }
+      a.ui span { color: var(--muted); font-size: 14.5px; }
+      a.ui i { font-style: normal; font-size: 13px; }
+      a.ui.feature { margin-bottom: 26px; border-width: 2px; border-color: #0f7a6b; }
+      h2 { font-size: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 12px; }
+      footer { margin-top: 28px; color: var(--muted); font-size: 14px; }
+      code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+      button { font: inherit; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>🎉 party, without the board</h1>
+      <p class="lede">A made-up neighbourhood with its clubs, a street party, a book club and a family dinner. Everything you do is kept in
+        this browser. All the UIs below share the same data, so answer something in one and see it in another.</p>
+      <a class="ui feature" href="clubhouse/"><b>🏠 Club House</b><span>The direction: fill-in-the-blank forms on the desktop, the swipe deck on phones (it opens by default there),
+        and features built in: a calendar, chat (“Ask the board”), a beginner-friendly text mode, Mastodon-style keys (press <code>?</code>), and a theme picker: Club House or Gazette.</span>
+        <i>Desktop: forms · Phone: the deck · Themes: Club House, Gazette</i></a>
+      <h2>The prototypes it came from</h2>
+      <ul>
+        <li><a class="ui" href="classic/"><b>Classic</b><span>The current local app: header links, pages and forms.</span><i>Nav: top menu · Forms: classic fields</i></a></li>
+        <li><a class="ui" href="chat/"><b>💬 Chat</b><span>A conversation with the board. Type “help”, or tap the chips.</span><i>Nav: what you say · Forms: one question at a time</i></a></li>
+        <li><a class="ui" href="calendar/"><b>🗓 Calendar</b><span>The month is the menu. Click a day to plan; drag an event to move it.</span><i>Nav: the grid and its layers · Forms: a drawer with a day timeline</i></a></li>
+        <li><a class="ui" href="deck/"><b>🃏 Deck</b><span>Phone-first. Swipe right to go, left to pass, up for maybe.</span><i>Nav: bottom tabs · Forms: full-screen steps, a PIN pad</i></a></li>
+        <li><a class="ui" href="terminal/"><b>⌨️ Terminal</b><span>Keyboard only: j/k, y/m/n, ctrl-k to jump, :commands.</span><i>Nav: keys and a palette · Forms: text buffers, :w to save</i></a></li>
+        <li><a class="ui" href="gazette/"><b>📰 Gazette</b><span>The house newspaper. Reply slips and the press desk.</span><i>Nav: a table of contents · Forms: sentences with blanks</i></a></li>
+      </ul>
+      <footer>
+        <p>You start signed in as <b>Sam Rivera</b> (the admin). The <b>DEMO</b> tab on the right edge of every UI switches person, signs out, resets the data,
+          or starts an empty board (first-run setup). Every PIN is <code>1234</code>.</p>
+        <p>Nothing leaves this browser: there is no email, no Mastodon and no publishing. Dates move forward each week so the demo stays current.</p>
+        <p><button type="button" id="reset">Reset the demo data</button></p>
+      </footer>
+    </main>
+    <script>
+      document.getElementById('reset').addEventListener('click', () => {
+        try { localStorage.removeItem('party-demo:v1'); } catch {}
+        alert('Reset: the next UI you open starts fresh.');
+      });
+    </script>
+  </body>
+</html>

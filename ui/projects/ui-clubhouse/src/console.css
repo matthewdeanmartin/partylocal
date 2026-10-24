@@ -1,0 +1,81 @@
+/* Text mode (from the Terminal prototype), scoped to .console. */
+
+.console {
+  & {
+  --bg: #0b0f14;
+  --pane: #0f141b;
+  --line: #1f2a37;
+  --text: #c9d1d9;
+  --dim: #6e7b8b;
+  --hi: #1b2633;
+  --cur: #23344a;
+  --green: #7ee787;
+  --yellow: #e3b341;
+  --red: #ff7b72;
+  --blue: #79c0ff;
+  --magenta: #d2a8ff;
+  color-scheme: dark;
+  font: 14px/1.5 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Menlo, Consolas, monospace;
+}
+  * { box-sizing: border-box; }
+  button, input, textarea { font: inherit; color: inherit; }
+  pre { margin: 0; font: inherit; }
+  kbd { color: var(--yellow); margin-right: 4px; font: inherit; }
+  .dim { color: var(--dim); }
+  .err { color: var(--red); }
+  .ok { color: var(--green); }
+  .num { color: var(--blue); }
+  .strike { text-decoration: line-through; color: var(--dim); }
+  .boot { padding: 20px; color: var(--green); }
+  & { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; }
+  .status { display: flex; gap: 2px; align-items: center; background: var(--hi); border-bottom: 1px solid var(--line); padding: 0 8px; white-space: nowrap; overflow: hidden; }
+  .status button { border: 0; background: none; padding: 3px 10px; cursor: pointer; color: var(--dim); }
+  .status button.on { background: var(--blue); color: var(--bg); }
+  .status button.on kbd { color: var(--bg); }
+  .status button b { color: var(--red); margin-left: 4px; }
+  .status button.on b { color: var(--bg); }
+  .status .fill { flex: 1; }
+  .status .who { color: var(--green); margin-right: 12px; }
+  .panes { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); min-height: 0; }
+  .list, .detail { overflow: auto; min-height: 0; border-right: 1px solid var(--line); }
+  .detail { background: var(--pane); border-right: 0; display: flex; flex-direction: column; }
+  .title { position: sticky; top: 0; background: var(--bg); color: var(--magenta); padding: 2px 10px; border-bottom: 1px dashed var(--line); z-index: 1; }
+  .detail .title { background: var(--pane); }
+  .row { display: flex; gap: 8px; padding: 0 10px; white-space: pre; cursor: default; }
+  .row .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .row.cur { background: var(--cur); }
+  .row .ptr { color: var(--yellow); }
+  .st-going { color: var(--green); }
+  .st-maybe { color: var(--yellow); }
+  .st-waitlist { color: var(--blue); }
+  .st-no { color: var(--dim); }
+  .st-none { color: var(--red); }
+  .man { padding: 10px 14px; white-space: pre-wrap; color: var(--text); }
+  .editor { display: grid; grid-template-columns: auto 1fr; flex: 1; min-height: 0; }
+  .gutter { color: var(--dim); padding: 8px 6px 8px 8px; text-align: right; user-select: none; border-right: 1px solid var(--line); overflow: hidden; line-height: 1.5; }
+  .gutter .bad { color: var(--bg); background: var(--red); }
+  .editor textarea { border: 0; outline: 0; resize: none; background: transparent; padding: 8px 10px; line-height: 1.5; white-space: pre; overflow: auto; caret-color: var(--yellow); tab-size: 2; }
+  .detail .err { padding: 2px 14px; }
+  .cmd { display: flex; align-items: center; gap: 12px; padding: 2px 10px; background: var(--hi); border-top: 1px solid var(--line); min-height: 26px; }
+  .cmd form { display: flex; flex: 1; }
+  .cmd form span { color: var(--yellow); }
+  .cmd input { flex: 1; border: 0; outline: 0; background: transparent; padding: 0 2px; caret-color: var(--yellow); }
+  .cmd .msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmd .mode { color: var(--dim); white-space: nowrap; }
+  .palette-scrim { position: fixed; inset: 0; background: #0008; }
+  .palette { position: fixed; top: 12vh; left: 50%; transform: translateX(-50%); width: min(640px, 94vw); background: var(--pane); border: 1px solid var(--blue); box-shadow: 0 10px 40px #000a; }
+  .palette input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: var(--bg); padding: 8px 12px; outline: 0; }
+  .hit { display: flex; justify-content: space-between; gap: 12px; padding: 3px 12px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+  .hit.cur { background: var(--cur); }
+  .hit .dim { overflow: hidden; text-overflow: ellipsis; }
+  .tty { padding: 20px; white-space: pre-wrap; color: var(--green); height: 100dvh; cursor: text; }
+  .tty form { display: inline-flex; width: 100%; }
+  .tty input { flex: 1; border: 0; outline: 0; background: transparent; padding: 0; color: var(--text); caret-color: var(--green); }
+  @media (max-width: 760px) {
+  .panes { grid-template-columns: 1fr; grid-template-rows: 45% 55%; }
+  .list { border-right: 0; border-bottom: 1px solid var(--line); }
+  .hide-narrow { display: none; }
+  .status .who, .status .dim { display: none; }
+  .cmd .mode { display: none; }
+}
+}

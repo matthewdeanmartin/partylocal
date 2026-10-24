@@ -1,0 +1,643 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "cli": {
+    "packageManager": "npm",
+    "analytics": false
+  },
+  "newProjectRoot": "projects",
+  "projects": {
+    "local": {
+      "projectType": "application",
+      "root": "projects/local",
+      "sourceRoot": "projects/local/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/local",
+            "browser": "projects/local/src/main.ts",
+            "tsConfig": "projects/local/tsconfig.app.json",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "projects/local/public"
+              }
+            ],
+            "styles": [
+              "projects/local/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "demo": {
+              "outputPath": {
+                "base": "dist/demo-local/classic",
+                "browser": ""
+              },
+              "fileReplacements": [
+                {
+                  "replace": "projects/party-demo/src/switch.ts",
+                  "with": "projects/party-demo/src/switch.demo.ts"
+                }
+              ],
+              "outputHashing": "all",
+              "baseHref": "/classic/"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "local:build:production"
+            },
+            "development": {
+              "buildTarget": "local:build:development"
+            },
+            "demo": {
+              "buildTarget": "local:build:development,demo"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "proxyConfig": "proxy.conf.mjs"
+          }
+        }
+      }
+    },
+    "companion": {
+      "projectType": "application",
+      "root": "projects/companion",
+      "sourceRoot": "projects/companion/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/companion",
+            "browser": "projects/companion/src/main.ts",
+            "tsConfig": "projects/companion/tsconfig.app.json",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "projects/companion/public"
+              }
+            ],
+            "styles": [
+              "projects/local/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "optimization": {
+                "scripts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                }
+              },
+              "outputHashing": "all"
+            },
+            "demo": {
+              "outputPath": "dist/demo",
+              "optimization": {
+                "scripts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                }
+              },
+              "outputHashing": "all",
+              "fileReplacements": [
+                {
+                  "replace": "projects/companion/src/app/mode.ts",
+                  "with": "projects/companion/src/app/mode.demo.ts"
+                }
+              ]
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "companion:build:production"
+            },
+            "demo": {
+              "buildTarget": "companion:build:demo"
+            },
+            "development": {
+              "buildTarget": "companion:build:development"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4201
+          }
+        }
+      }
+    },
+    "ui-chat": {
+      "projectType": "application",
+      "root": "projects/ui-chat",
+      "sourceRoot": "projects/ui-chat/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/ui-chat",
+            "browser": "projects/ui-chat/src/main.ts",
+            "tsConfig": "projects/ui-chat/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "projects/ui-chat/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "demo": {
+              "outputPath": {
+                "base": "dist/demo-local/chat",
+                "browser": ""
+              },
+              "baseHref": "/chat/",
+              "fileReplacements": [
+                {
+                  "replace": "projects/party-demo/src/switch.ts",
+                  "with": "projects/party-demo/src/switch.demo.ts"
+                }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "ui-chat:build:production"
+            },
+            "development": {
+              "buildTarget": "ui-chat:build:development"
+            },
+            "demo": {
+              "buildTarget": "ui-chat:build:development,demo"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4211,
+            "proxyConfig": "proxy.conf.mjs"
+          }
+        }
+      }
+    },
+    "ui-calendar": {
+      "projectType": "application",
+      "root": "projects/ui-calendar",
+      "sourceRoot": "projects/ui-calendar/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/ui-calendar",
+            "browser": "projects/ui-calendar/src/main.ts",
+            "tsConfig": "projects/ui-calendar/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "projects/ui-calendar/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "demo": {
+              "outputPath": {
+                "base": "dist/demo-local/calendar",
+                "browser": ""
+              },
+              "baseHref": "/calendar/",
+              "fileReplacements": [
+                {
+                  "replace": "projects/party-demo/src/switch.ts",
+                  "with": "projects/party-demo/src/switch.demo.ts"
+                }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "ui-calendar:build:production"
+            },
+            "development": {
+              "buildTarget": "ui-calendar:build:development"
+            },
+            "demo": {
+              "buildTarget": "ui-calendar:build:development,demo"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4212,
+            "proxyConfig": "proxy.conf.mjs"
+          }
+        }
+      }
+    },
+    "ui-deck": {
+      "projectType": "application",
+      "root": "projects/ui-deck",
+      "sourceRoot": "projects/ui-deck/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/ui-deck",
+            "browser": "projects/ui-deck/src/main.ts",
+            "tsConfig": "projects/ui-deck/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "projects/ui-deck/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "demo": {
+              "outputPath": {
+                "base": "dist/demo-local/deck",
+                "browser": ""
+              },
+              "baseHref": "/deck/",
+              "fileReplacements": [
+                {
+                  "replace": "projects/party-demo/src/switch.ts",
+                  "with": "projects/party-demo/src/switch.demo.ts"
+                }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "ui-deck:build:production"
+            },
+            "development": {
+              "buildTarget": "ui-deck:build:development"
+            },
+            "demo": {
+              "buildTarget": "ui-deck:build:development,demo"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4213,
+            "proxyConfig": "proxy.conf.mjs"
+          }
+        }
+      }
+    },
+    "ui-terminal": {
+      "projectType": "application",
+      "root": "projects/ui-terminal",
+      "sourceRoot": "projects/ui-terminal/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/ui-terminal",
+            "browser": "projects/ui-terminal/src/main.ts",
+            "tsConfig": "projects/ui-terminal/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "projects/ui-terminal/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "demo": {
+              "outputPath": {
+                "base": "dist/demo-local/terminal",
+                "browser": ""
+              },
+              "baseHref": "/terminal/",
+              "fileReplacements": [
+                {
+                  "replace": "projects/party-demo/src/switch.ts",
+                  "with": "projects/party-demo/src/switch.demo.ts"
+                }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "ui-terminal:build:production"
+            },
+            "development": {
+              "buildTarget": "ui-terminal:build:development"
+            },
+            "demo": {
+              "buildTarget": "ui-terminal:build:development,demo"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4214,
+            "proxyConfig": "proxy.conf.mjs"
+          }
+        }
+      }
+    },
+    "ui-gazette": {
+      "projectType": "application",
+      "root": "projects/ui-gazette",
+      "sourceRoot": "projects/ui-gazette/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/ui-gazette",
+            "browser": "projects/ui-gazette/src/main.ts",
+            "tsConfig": "projects/ui-gazette/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "projects/ui-gazette/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "demo": {
+              "outputPath": {
+                "base": "dist/demo-local/gazette",
+                "browser": ""
+              },
+              "baseHref": "/gazette/",
+              "fileReplacements": [
+                {
+                  "replace": "projects/party-demo/src/switch.ts",
+                  "with": "projects/party-demo/src/switch.demo.ts"
+                }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "ui-gazette:build:production"
+            },
+            "development": {
+              "buildTarget": "ui-gazette:build:development"
+            },
+            "demo": {
+              "buildTarget": "ui-gazette:build:development,demo"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4215,
+            "proxyConfig": "proxy.conf.mjs"
+          }
+        }
+      }
+    },
+    "ui-clubhouse": {
+      "projectType": "application",
+      "root": "projects/ui-clubhouse",
+      "sourceRoot": "projects/ui-clubhouse/src",
+      "prefix": "party",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/ui-clubhouse",
+            "browser": "projects/ui-clubhouse/src/main.ts",
+            "tsConfig": "projects/ui-clubhouse/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "projects/ui-clubhouse/src/desk.css",
+              "projects/ui-clubhouse/src/mobile.css",
+              "projects/ui-clubhouse/src/chat.css",
+              "projects/ui-clubhouse/src/console.css",
+              "projects/ui-clubhouse/src/calendar.css",
+              "projects/ui-clubhouse/src/classic.css",
+              "projects/ui-clubhouse/src/styles.css"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "300kB",
+                  "maximumError": "450kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "demo": {
+              "outputPath": {
+                "base": "dist/demo-local/clubhouse",
+                "browser": ""
+              },
+              "baseHref": "/clubhouse/",
+              "fileReplacements": [
+                {
+                  "replace": "projects/party-demo/src/switch.ts",
+                  "with": "projects/party-demo/src/switch.demo.ts"
+                }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "ui-clubhouse:build:production"
+            },
+            "development": {
+              "buildTarget": "ui-clubhouse:build:development"
+            },
+            "demo": {
+              "buildTarget": "ui-clubhouse:build:development,demo"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4216,
+            "proxyConfig": "proxy.conf.mjs"
+          }
+        }
+      }
+    }
+  }
+}

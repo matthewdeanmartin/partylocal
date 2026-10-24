@@ -1,28 +1,24 @@
-# Angular specific
-/dist/
+# party: build output and local state
+target/
+.embuild/
+.local/
+node_modules/
+.angular/
+ui/dist/
+.env
+__pycache__/
+# Server private keys: reissue with `make certs` (the household CA stays elsewhere)
+*.key
+
+# Angular and Node leftovers (from the repository's starter .gitignore).
+# package-lock.json files are kept: CI installs with `npm ci`.
 /out-tsc/
 /tmp/
 /coverage/
 /e2e/test-output/
-/.angular/
-.angular/
-
-# Node modules and dependency files
-/node_modules/
-/package-lock.json
-/yarn.lock
-
-# Environment files
-/.env
-
-# Angular CLI and build artefacts
-/.angular-cli.json
 /.ng/
-
-# TypeScript cache
+/.angular-cli.json
 *.tsbuildinfo
-
-# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
