@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { blankAnswer, EventView, guestLimit, RsvpInput, toggle, when } from 'party-core';
-import { Api, answerEvent, problem } from 'party-ng';
+import { Api, answerEvent, permittedAnswer, problem } from 'party-ng';
 
 type Step = 'guests' | 'when' | 'bring' | 'shifts' | 'rides' | 'diet' | `q${number}` | 'note';
 
@@ -11,7 +11,7 @@ export function stepsFor(v: EventView, status: RsvpInput['status']): Step[] {
   const out: Step[] = [];
   if (guestLimit(e) > 0) out.push('guests');
   if (e.modules.includes('when') && e.when.length) out.push('when');
-  if (e.modules.includes('bring') && e.bring.length) out.push('bring');
+  if (e.modules.includes('bring')) out.push('bring');
   if (e.modules.includes('shifts') && e.shifts.length) out.push('shifts');
   if (e.modules.includes('rides')) out.push('rides');
   if (e.modules.includes('diet')) out.push('diet');
@@ -35,7 +35,7 @@ export function stepsFor(v: EventView, status: RsvpInput['status']): Step[] {
       <p class="for">{{ view().event.title }} · {{ status() === 'going' ? 'Going' : 'Maybe' }}</p>
       @let e = view().event;
       @let a = draft();
-      <div class="step">
+      <div class="step"><p class="hint">Answering for {{ targetName() }}</p>
         @switch (step()) {
           @case ('guests') {
             <h2>Bringing anyone?</h2>
@@ -121,6 +121,9 @@ export function stepsFor(v: EventView, status: RsvpInput['status']): Step[] {
 })
 export class Steps {
   readonly view = input.required<EventView>();
+  readonly targetName = input('yourself');
+  readonly target = input<number | 'me'>('me');
+  readonly privateFields = input(true);
   readonly status = input.required<RsvpInput['status']>();
   readonly done = output<EventView>();
   readonly cancel = output<void>();
@@ -130,7 +133,7 @@ export class Steps {
   readonly error = signal('');
   private readonly edits = signal<Partial<RsvpInput>>({});
   readonly draft = computed<RsvpInput>(() => ({ ...blankAnswer(this.view().event, this.view().mine), status: this.status(), ...this.edits() }));
-  readonly steps = computed(() => [...stepsFor(this.view(), this.status()), 'note' as Step]);
+  readonly steps = computed(() => [...stepsFor(this.view(), this.status()).filter(s => this.privateFields() || (s !== 'diet' && !s.startsWith('q'))), 'note' as Step]);
   readonly step = computed(() => this.steps()[this.i()]);
   readonly last = computed(() => this.i() === this.steps().length - 1);
   readonly limit = computed(() => guestLimit(this.view().event));
@@ -159,6 +162,7 @@ export class Steps {
   }
 
   async next(): Promise<void> {
+    if (this.busy()) return;
     if (!this.last()) {
       this.i.update((i) => i + 1);
       return;
@@ -166,7 +170,7 @@ export class Steps {
     this.busy.set(true);
     this.error.set('');
     try {
-      this.done.emit(await answerEvent(this.api, this.view().event.id, this.draft()));
+      this.done.emit(await answerEvent(this.api, this.view().event.id, permittedAnswer(this.draft(), this.privateFields()), this.target()));
     } catch (e) {
       this.error.set(problem(e));
     } finally {

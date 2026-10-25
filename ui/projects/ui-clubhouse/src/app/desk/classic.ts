@@ -1,3 +1,4 @@
+import { loadFeatureStyle } from '../feature-styles';
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 
@@ -11,4 +12,6 @@ import { RouterOutlet } from '@angular/router';
   imports: [RouterOutlet],
   template: `<div class="classic"><router-outlet /></div>`,
 })
-export class ClassicFrame {}
+export class ClassicFrame {
+  private readonly featureStyle = loadFeatureStyle('classic');
+}

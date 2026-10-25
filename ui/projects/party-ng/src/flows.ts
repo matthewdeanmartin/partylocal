@@ -20,11 +20,29 @@ export interface Overview {
   others: GroupView[];
 }
 
+export async function allEvents(api: Api, path: string): Promise<EventList> {
+  const events: EventSummary[] = []; let next = 0;
+  do {
+    const page = await api.get<EventList>(path + (next ? `${path.includes('?') ? '&' : '?'}after=${next}` : ''), 'EventList');
+    events.push(...page.events); next = page.next;
+  } while (next);
+  return { events, next: 0 };
+}
+
+async function allGroups(api: Api): Promise<GroupList> {
+  const groups: GroupView[] = []; let next = 0;
+  do {
+    const page = await api.get<GroupList>('/api/v1/groups' + (next ? `?after=${next}` : ''), 'GroupList');
+    groups.push(...page.groups); next = page.next;
+  } while (next);
+  return { groups, next: 0 };
+}
+
 export async function loadOverview(api: Api): Promise<Overview> {
   const [mine, upcoming, groups] = await Promise.all([
-    api.get<EventList>('/api/v1/events?mine=1', 'EventList'),
-    api.get<EventList>('/api/v1/events', 'EventList'),
-    api.get<GroupList>('/api/v1/groups', 'GroupList'),
+    allEvents(api, '/api/v1/events?mine=1'),
+    allEvents(api, '/api/v1/events'),
+    allGroups(api),
   ]);
   const member = new Set(groups.groups.filter((g) => g.my_status === 'active').map((g) => g.id));
   return {
@@ -44,11 +62,21 @@ export interface GroupPage {
   members: MemberView[];
 }
 
+/** Follow the board's cursor so group history and duplicate checks include every retained event. */
+async function groupEvents(api: Api, group: number, past = false): Promise<EventList> {
+  const events: EventSummary[] = []; let after = 0;
+  do {
+    const page = await api.get<EventList>(`/api/v1/events?group=${group}&past=${past ? 1 : 0}&after=${after}`, 'EventList');
+    events.push(...page.events); after = page.next;
+  } while (after);
+  return { events, next: 0 };
+}
+
 export async function loadGroup(api: Api, ref: string): Promise<GroupPage> {
   const group = await api.get<GroupView>(`/api/v1/groups/${encodeURIComponent(ref)}`, 'GroupView');
   const [events, past, members] = await Promise.all([
-    api.get<EventList>(`/api/v1/events?group=${group.id}`, 'EventList'),
-    api.get<EventList>(`/api/v1/events?group=${group.id}&past=1`, 'EventList'),
+    groupEvents(api, group.id),
+    groupEvents(api, group.id, true),
     api.get<{ members: MemberView[] }>(`/api/v1/groups/${group.id}/members`, 'MemberList').catch(() => ({ members: [] })),
   ]);
   return { group, events: events.events, past: past.events, members: members.members };
@@ -84,8 +112,13 @@ export function leaveGroup(api: Api, id: number): Promise<GroupView> {
   return api.send<GroupView>('POST', `/api/v1/groups/${id}/leave`, undefined, 'GroupView');
 }
 
-export function loadPeople(api: Api, q = ''): Promise<PersonView[]> {
-  return api.get<PersonList>(`/api/v1/people?q=${encodeURIComponent(q)}`, 'PersonList').then((p) => p.people);
+export async function loadPeople(api: Api, q = ''): Promise<PersonView[]> {
+  const people: PersonView[] = []; let after = 0;
+  do {
+    const page = await api.get<PersonList>(`/api/v1/people?q=${encodeURIComponent(q)}&after=${after}`, 'PersonList');
+    people.push(...page.people); after = page.next;
+  } while (after);
+  return people;
 }
 
 export function loadNotices(api: Api): Promise<NoticeView[]> {
@@ -104,11 +137,13 @@ export function loadHouseholds(api: Api): Promise<{ id: number; name: string }[]
     .catch(() => []);
 }
 
-export type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date';
+export type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date' | 'yearly';
 
 /** Everything an event form fills in, as plain data any UI can bind to. */
 export interface EventDraft {
   kind: EventKind;
+  /** A previously resolved poll keeps its chosen time when edited. */
+  poll_locked: boolean;
   title: string;
   about: string;
   start: number;
@@ -145,7 +180,7 @@ const PLUS: Record<EventKind, EventDraft['plus_ones']> = {
 /** A fresh draft of `kind`, starting at `start` (Unix seconds, 0 = unset). */
 export function blankDraft(kind: EventKind = 'generic', start = 0): EventDraft {
   return {
-    kind, title: '', about: '', start, end: start ? start + 3 * 3600 : 0, where_kind: kind === 'outing' ? 'place' : 'tbd', place: '',
+    kind, poll_locked: false, title: '', about: '', start, end: start ? start + 3 * 3600 : 0, where_kind: kind === 'outing' ? 'place' : 'tbd', place: '',
     address: '', home: 0, capacity: 0, plus_ones: PLUS[kind], plus_max: 2, rsvp_by: 0, reminder_secs: 86_400, draft: false,
     modules: [...KIND_INFO[kind].modules], bring: [], diet_prompt: '', when: [], shifts: [], questions: [], rides_note: '', cost: '',
     link: '', repeat: '', every: 1, window: 3,
@@ -154,14 +189,26 @@ export function blankDraft(kind: EventKind = 'generic', start = 0): EventDraft {
 
 /** Switches a draft's kind, keeping what was typed. */
 export function withKind(d: EventDraft, kind: EventKind): EventDraft {
-  return { ...d, kind, modules: [...KIND_INFO[kind].modules], plus_ones: PLUS[kind], where_kind: kind === 'outing' ? 'place' : d.where_kind };
+  return { ...d, kind, poll_locked: false, modules: [...KIND_INFO[kind].modules], plus_ones: PLUS[kind], where_kind: kind === 'outing' ? 'place' : d.where_kind };
+}
+
+/** Adding a time vote is not a change of event kind or guest/module policies. */
+export function withTimePoll(d: EventDraft, fallbackStart: number): EventDraft {
+  const start = d.start || fallbackStart;
+  return { ...d, poll_locked: false,
+    modules: d.modules.includes('when') ? d.modules : [...d.modules, 'when'],
+    when: d.when.length >= 2 ? d.when : [
+      { id: 0, start, end: start + 7200 },
+      { id: 0, start: start + 86_400, end: start + 86_400 + 7200 },
+    ],
+  };
 }
 
 export function draftFrom(v: EventView): EventDraft {
   const e = v.event;
   return {
-    kind: e.kind, title: e.title, about: e.about, start: e.start, end: e.end, where_kind: e.where_kind, place: e.place, address: e.address,
-    home: e.home, capacity: e.capacity, plus_ones: e.plus_ones, plus_max: e.plus_max || 2, rsvp_by: e.rsvp_by, reminder_secs: e.reminder_secs,
+    kind: e.kind, poll_locked: e.modules.includes('when') && e.start !== 0, title: e.title, about: e.about, start: e.start, end: e.end, where_kind: e.where_kind, place: e.place, address: e.address,
+    home: e.home, capacity: e.capacity, plus_ones: e.plus_ones, plus_max: e.plus_max, rsvp_by: e.rsvp_by, reminder_secs: e.reminder_secs,
     draft: e.status === 'draft', modules: [...e.modules], bring: e.bring.map((s) => ({ ...s })), diet_prompt: e.diet_prompt,
     when: e.when.map((o) => ({ ...o })), shifts: e.shifts.map((s) => ({ ...s })),
     questions: e.questions.map((q) => ({ ...q, choices: [...q.choices] })), rides_note: e.rides_note, cost: e.cost, link: e.link,
@@ -172,7 +219,7 @@ export function draftFrom(v: EventView): EventDraft {
 /** The board's EventInput for a draft. `creating` sends the kind. */
 export function eventInput(d: EventDraft, creating: boolean): Record<string, unknown> {
   const has = (m: Module) => d.modules.includes(m);
-  const polling = has('when');
+  const polling = has('when') && !d.poll_locked;
   return {
     kind: creating ? d.kind : undefined,
     title: d.title,
@@ -192,7 +239,7 @@ export function eventInput(d: EventDraft, creating: boolean): Record<string, unk
     modules: d.modules,
     bring: has('bring') ? d.bring.filter((s) => s.name.trim()) : undefined,
     diet_prompt: d.diet_prompt,
-    when: polling ? d.when.filter((o) => o.start) : undefined,
+    when: has('when') ? d.when.filter((o) => o.start) : undefined,
     shifts: has('shifts') ? d.shifts.filter((s) => s.name.trim()) : undefined,
     questions: has('questions') ? d.questions.filter((q) => q.prompt.trim()) : undefined,
     rides_note: d.rides_note,
@@ -206,6 +253,9 @@ export function eventInput(d: EventDraft, creating: boolean): Record<string, unk
  * or starts a series when the draft repeats. Returns the event to show.
  */
 export async function saveEvent(api: Api, d: EventDraft, target: { group: number } | { id: number; rev: number }): Promise<number> {
+  if (d.modules.includes('questions') && d.questions.some(q => q.id && !q.prompt.trim())) {
+    throw new Error('An existing question needs a prompt. Use the full event editor to remove a question.');
+  }
   if ('id' in target) {
     const v = await api.send<EventView>('PATCH', `/api/v1/events/${target.id}`, { ...eventInput(d, false), rev: target.rev }, 'EventView');
     return v.event.id;

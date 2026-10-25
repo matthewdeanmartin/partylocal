@@ -569,14 +569,14 @@
             "outputPath": "dist/ui-clubhouse",
             "browser": "projects/ui-clubhouse/src/main.ts",
             "tsConfig": "projects/ui-clubhouse/tsconfig.app.json",
-            "assets": [],
+            "assets": [
+              {
+                "glob": "*.css",
+                "input": "projects/ui-clubhouse/src",
+                "output": "features"
+              }
+            ],
             "styles": [
-              "projects/ui-clubhouse/src/desk.css",
-              "projects/ui-clubhouse/src/mobile.css",
-              "projects/ui-clubhouse/src/chat.css",
-              "projects/ui-clubhouse/src/console.css",
-              "projects/ui-clubhouse/src/calendar.css",
-              "projects/ui-clubhouse/src/classic.css",
               "projects/ui-clubhouse/src/styles.css"
             ]
           },

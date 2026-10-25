@@ -39,7 +39,9 @@ export function freshen(s: DemoState, now = Math.floor(Date.now() / 1000)): Demo
   if (weeks < 1) return s;
   const d = weeks * WEEK;
   const move = (t: number) => (t ? t + d : 0);
+  const yearly = new Set(s.series.filter(s => s.rule === 'yearly').map(s => s.id));
   for (const e of s.events) {
+    if (yearly.has(e.series)) continue;
     e.start = move(e.start);
     e.end = move(e.end);
     e.rsvp_by = move(e.rsvp_by);

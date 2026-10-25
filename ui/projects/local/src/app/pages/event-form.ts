@@ -1,13 +1,13 @@
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   EventKind, EventView, fromLocalInput, KIND_INFO, Module, MODULE_LABEL, Question, SeriesView, Shift, Slot,
-  TimeOption, toLocalInput,
+  TimeOption, toLocalInput, PersonList, PersonView, GroupView,
 } from 'party-core';
 import { Api, problem } from '../api';
 import { value } from './auth';
 
-type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date';
+type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date' | 'yearly';
 
 /**
  * New event (`/groups/:ref/events/new`, `?series=1` for a recurring one) or
@@ -15,6 +15,17 @@ type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date';
  */
 @Component({
   selector: 'party-event-form',
+  imports: [RouterLink],
+  styles: [`
+    :host { display: block; padding: 1rem; }
+    .card { max-width: 52rem; margin: auto; }
+    fieldset { margin: 1rem 0; padding: 1rem; min-width: 0; }
+    fieldset.form-fields { border: 0; padding: 0; margin: 0; }
+    label { display: block; margin: .75rem 0; }
+    input, textarea, select { max-width: 100%; box-sizing: border-box; }
+    button { margin: .25rem; }
+    .row { display: flex; flex-wrap: wrap; gap: .75rem; }
+  `],
   template: `
     <section class="card narrow">
       <h1>{{ id() ? 'Edit event' : 'New event' }}</h1>
@@ -28,29 +39,41 @@ type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date';
           </div>
         </fieldset>
       }
-      @if (scope() === 'following') { <p class="status on">Changes apply to this and every later occurrence.</p> }
+      @if (seriesId()) { <p><a [routerLink]="['/series', seriesId()]">Series settings</a> · {{ scope() === 'following' ? 'Editing this and following occurrences' : 'Editing only this occurrence' }}</p> }
+      @if (scope() === 'following') { <p class="status on">Changes apply to this and every later active occurrence and future events. Time edits change the time of day, not the repeat dates. The schedule follows the board timezone; inputs use your device timezone.</p> }
+      @if (loading()) { <p role="status">Loading event settings…</p> }
+      @if (saved()) { <p role="status">{{ saved() }}</p> }
+      @if (id()) { <p><a [routerLink]="['/events', id()]">Back to event</a></p> }
       <form (submit)="submit($event)">
+        <fieldset class="form-fields" [disabled]="loading() || !allowed() || busy()">
         <label>Title <input maxlength="80" required [value]="title()" (input)="title.set(v($event))" /></label>
         <label>About <small>optional</small> <textarea rows="3" maxlength="4000" [value]="about()" (input)="about.set(v($event))"></textarea></label>
-        @if (!has('when')) {
+        @if (!polling()) {
           <div class="row">
-            <label>Starts <input type="datetime-local" required [value]="start()" (input)="start.set(v($event))" /></label>
+            <label>Starts <small>Leave blank if time is not yet determined</small> <input type="datetime-local" [value]="start()" (input)="start.set(v($event))" /></label>
             <label>Ends <small>optional</small> <input type="datetime-local" [value]="end()" (input)="end.set(v($event))" /></label>
           </div>
         }
         @if (!id() && repeatable()) {
           <fieldset>
             <legend>Repeat</legend>
+            <p>Weekly and monthly schedules use the board timezone and keep their local time through daylight-saving changes. Inputs use your device timezone. Yearly repeats keep the same month and date; February 29 is observed on February 28 in non-leap years and returns to February 29 in leap years.</p>
             <select [value]="repeat()" (change)="repeat.set($any(v($event)))" aria-label="Repeat">
               <option value="">Once</option>
               <option value="weekly">Weekly</option>
               <option value="monthly-nth">Monthly, same weekday (e.g. first Friday)</option>
-              <option value="monthly-date">Monthly, same date</option>
+              <option value="monthly-date">Monthly, same date</option><option value="yearly">Yearly (birthdays and anniversaries)</option>
             </select>
             @if (repeat() === 'weekly') {
               <label>Every <input type="number" min="1" max="4" [value]="every()" (input)="every.set(+v($event))" /> week(s)</label>
             }
+            @if (repeat() === 'monthly-nth') {
+              <label>Weekday occurrence <select [value]="nth()" (change)="nth.set(+v($event))"><option value="0">Infer from first date</option><option value="1">First</option><option value="2">Second</option><option value="3">Third</option><option value="4">Fourth</option><option value="-1">Last</option></select></label>
+              <p>The first date must match the chosen weekday occurrence in the board timezone.</p>
+            }
             @if (repeat()) {
+              <label>Last allowed start <small>optional, inclusive</small><input type="datetime-local" [value]="repeatUntil()" (input)="repeatUntil.set(v($event))" /></label>
+              <label>Total occurrence limit <small>0 = unlimited, at most 104</small><input type="number" min="0" max="104" [value]="repeatCount()" (input)="repeatCount.set(+v($event))" /></label>
               <label>Keep this many ahead <input type="number" min="1" max="8" [value]="window()" (input)="window.set(+v($event))" /></label>
             }
           </fieldset>
@@ -72,9 +95,38 @@ type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date';
                 @for (h of households(); track h.id) { <option [value]="h.id" [selected]="h.id === home()">{{ h.name }}</option> }
               </select></label>
           }
+          <label>Map link <small>optional, https:// or http://</small><input type="url" maxlength="300" [value]="map()" (input)="map.set(v($event))" /></label>
           @if (whereKind() !== 'tbd') {
             <label>Address <small>shown on this board only</small> <input maxlength="200" [value]="address()" (input)="address.set(v($event))" /></label>
           }
+        </fieldset>
+        <fieldset>
+          <legend>Hosts and access</legend>
+          <p>Event hosts can edit this event and manage answers. This does not change group co-organizer roles. Choose 1 to 4 hosts.</p>
+          @for (person of hosts(); track person) {
+            <p>{{ personName(person) }} <button type="button" (click)="hosts.set(without(hosts(), $index))" [disabled]="hosts().length <= 1">Remove host</button></p>
+          }
+          <label>Visibility
+            <select [value]="visibility()" (change)="visibility.set($any(v($event)))">
+              <option value="group">Follow group visibility</option>
+              <option value="invite-only">Invite only</option>
+              <option value="public" [disabled]="!publicGroup()">Public (public groups only)</option>
+            </select>
+          </label>
+          <p>Invite-only events are visible to hosts, group managers and direct invitees. Direct invitations do not add group membership.</p>
+          @for (person of invitees(); track person) {
+            <p>{{ personName(person) }} <button type="button" (click)="invitees.set(without(invitees(), $index))">Remove invitee</button></p>
+          }
+          <label>Find people <input type="search" [value]="peopleQuery()" (input)="peopleQuery.set(v($event))" /></label>
+          <button type="button" (click)="searchPeople()" [disabled]="searching()">{{ searching() ? 'Searching…' : 'Search people' }}</button>
+          @if (peopleError()) { <p role="alert">{{ peopleError() }}</p> }
+          @for (person of people(); track person.id) {
+            <p>{{ person.display_name }}
+              <button type="button" [disabled]="hosts().includes(person.id) || hosts().length >= 4" (click)="hosts.set([...hosts(), person.id])">Add host</button>
+              <button type="button" [disabled]="invitees().includes(person.id)" (click)="invitees.set([...invitees(), person.id])">Invite</button>
+            </p>
+          }
+          @if (searched() && !people().length) { <p>No visible people match your search.</p> }
         </fieldset>
         <fieldset>
           <legend>Who and how many</legend>
@@ -122,7 +174,7 @@ type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date';
         @if (has('diet')) {
           <label>Diet question <input maxlength="120" [value]="diet()" placeholder="Allergies or diet?" (input)="diet.set(v($event))" /></label>
         }
-        @if (has('when')) {
+        @if (polling()) {
           <fieldset>
             <legend>Times to choose from (2 to 6)</legend>
             @for (o of when(); track $index) {
@@ -181,8 +233,9 @@ type Repeat = '' | 'weekly' | 'monthly-nth' | 'monthly-date';
         @if (has('link')) {
           <label>Online link <input type="url" maxlength="300" [value]="link()" (input)="link.set(v($event))" /></label>
         }
+        </fieldset>
         @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-        <button type="submit" [disabled]="busy()">{{ id() ? 'Save' : repeat() ? 'Start the series' : 'Create' }}</button>
+        <button type="submit" [disabled]="busy() || loading() || !allowed()">{{ busy() ? 'Saving…' : id() ? 'Save' : repeat() ? 'Start the series' : 'Create' }}</button>
       </form>
     </section>
   `,
@@ -196,6 +249,37 @@ export class EventForm implements OnInit {
   /** Query: `series=1` starts with repeating on; `scope=following`. */
   readonly series = input<string>('');
   readonly scope = input<string>('');
+
+  readonly loading = signal(true);
+  readonly allowed = signal(false);
+  readonly saved = signal('');
+  readonly hosts = signal<number[]>([]);
+  readonly invitees = signal<number[]>([]);
+  readonly visibility = signal<'group' | 'invite-only' | 'public'>('group');
+  readonly map = signal('');
+  readonly publicGroup = signal(false);
+  readonly people = signal<PersonView[]>([]);
+  readonly peopleQuery = signal('');
+  readonly peopleError = signal('');
+  readonly searching = signal(false);
+  readonly searched = signal(false);
+  private readonly names = new Map<number, string>();
+
+  personName(id: number): string { return this.names.get(id) ?? `Person #${id}`; }
+
+  async searchPeople(): Promise<void> {
+    this.searching.set(true); this.peopleError.set('');
+    try {
+      const people: PersonView[] = []; let after = 0;
+      do {
+        const page = await this.api.get<PersonList>(`/api/v1/people?q=${encodeURIComponent(this.peopleQuery())}&after=${after}`, 'PersonList');
+        people.push(...page.people); after = page.next;
+      } while (after);
+      for (const p of people) this.names.set(p.id, p.display_name);
+      this.people.set(people); this.searched.set(true);
+    } catch (e) { this.peopleError.set(problem(e)); }
+    finally { this.searching.set(false); }
+  }
 
   readonly kind = signal<EventKind>('generic');
   readonly modules = signal<Module[]>(['headcount']);
@@ -223,6 +307,10 @@ export class EventForm implements OnInit {
   readonly cost = signal('');
   readonly link = signal('');
   readonly repeat = signal<Repeat>('');
+  readonly seriesId = signal(0);
+  readonly nth = signal(0);
+  readonly repeatUntil = signal('');
+  readonly repeatCount = signal(0);
   readonly every = signal(1);
   readonly window = signal(4);
   readonly households = signal<{ id: number; name: string }[]>([]);
@@ -230,6 +318,8 @@ export class EventForm implements OnInit {
   readonly busy = signal(false);
   private rev = 0;
   private group = 0;
+  readonly pollLocked = signal(false);
+  readonly polling = computed(() => this.has('when') && !this.pollLocked());
   readonly repeatable = computed(() => !this.has('when'));
 
   readonly kinds = Object.keys(KIND_INFO) as EventKind[];
@@ -245,6 +335,7 @@ export class EventForm implements OnInit {
   }
 
   flip(m: Module): void {
+    if (m === 'when') this.pollLocked.set(false);
     this.modules.update((ms) => (ms.includes(m) ? ms.filter((x) => x !== m) : [...ms, m]));
     if (m === 'when' && this.has('when')) this.repeat.set('');
   }
@@ -277,19 +368,40 @@ export class EventForm implements OnInit {
     if (this.series()) this.repeat.set('weekly');
     if (!this.id()) {
       try {
-        const g = await this.api.get<{ id: number }>(`/api/v1/groups/${this.ref()}`, 'GroupView');
+        const g = await this.api.get<GroupView>(`/api/v1/groups/${this.ref()}`, 'GroupView');
         this.group = g.id;
+        this.allowed.set(g.can_create_events && g.status === 'active');
+        this.publicGroup.set(g.visibility === 'public');
+        const me = this.api.me();
+        if (me) { this.hosts.set([me.id]); this.names.set(me.id, me.display_name); }
+        if (!this.allowed()) this.error.set('You cannot create events in this group.');
       } catch (e) {
         this.error.set(problem(e));
       }
+      this.loading.set(false);
       return;
     }
     try {
       const v = await this.api.get<EventView>(`/api/v1/events/${this.id()}`, 'EventView');
+      if (!v.can_edit) { this.error.set('Only event hosts and group managers can edit this event.'); return; }
+      this.allowed.set(true);
       const e = v.event;
+      this.seriesId.set(e.series);
+      this.hosts.set([...e.hosts]); this.invitees.set([...e.invitees]);
+      e.hosts.forEach((id, i) => this.names.set(id, v.host_names[i] || `Person #${id}`));
+      this.visibility.set(e.visibility); this.map.set(e.map);
+      // A host outside the group can still edit even if the group itself is private.
+      await this.api.get<GroupView>(`/api/v1/groups/${e.group}`, 'GroupView')
+        .then(g => this.publicGroup.set(g.visibility === 'public')).catch(() => undefined);
+      for (const id of e.invitees) {
+        void this.api.get<PersonView>(`/api/v1/people/${id}`, 'PersonView').then(p => {
+          this.names.set(id, p.display_name); this.invitees.update(ids => [...ids]);
+        }).catch(() => undefined);
+      }
       this.rev = e.rev;
       this.kind.set(e.kind);
       this.modules.set(e.modules);
+      this.pollLocked.set(e.modules.includes('when') && e.start !== 0);
       this.title.set(e.title);
       this.about.set(e.about);
       this.start.set(toLocalInput(e.start));
@@ -300,7 +412,7 @@ export class EventForm implements OnInit {
       this.home.set(e.home);
       this.capacity.set(e.capacity);
       this.plusOnes.set(e.plus_ones);
-      this.plusMax.set(e.plus_max || 2);
+      this.plusMax.set(e.plus_max);
       this.rsvpBy.set(toLocalInput(e.rsvp_by));
       this.reminder.set(e.reminder_secs);
       this.draft.set(e.status === 'draft');
@@ -315,13 +427,14 @@ export class EventForm implements OnInit {
       this.link.set(e.link);
     } catch (e) {
       this.error.set(problem(e));
-    }
+    } finally { this.loading.set(false); }
   }
 
   private body(): Record<string, unknown> {
-    const polling = this.has('when');
+    const polling = this.polling();
     return {
       kind: this.id() ? undefined : this.kind(),
+      hosts: this.hosts(), visibility: this.visibility(), invitees: this.invitees(), map: this.map().trim(),
       title: this.title(),
       about: this.about(),
       start: polling ? 0 : fromLocalInput(this.start()),
@@ -339,7 +452,7 @@ export class EventForm implements OnInit {
       modules: this.modules(),
       bring: this.has('bring') ? this.bring().filter((s) => s.name.trim()) : undefined,
       diet_prompt: this.diet(),
-      when: polling ? this.when().filter((o) => o.start) : undefined,
+      when: this.has('when') ? this.when().filter((o) => o.start) : undefined,
       shifts: this.has('shifts') ? this.shifts().filter((s) => s.name.trim()) : undefined,
       questions: this.has('questions') ? this.questions().filter((q) => q.prompt.trim()) : undefined,
       rides_note: this.ridesNote(),
@@ -350,18 +463,25 @@ export class EventForm implements OnInit {
 
   async submit(event: Event): Promise<void> {
     event.preventDefault();
+    if (this.loading() || !this.allowed() || this.busy()) return;
+    this.saved.set('');
+    if (!this.hosts().length || this.hosts().length > 4) { this.error.set('Choose 1 to 4 event hosts.'); return; }
+    if (this.map().trim() && !/^https?:\/\//i.test(this.map().trim())) { this.error.set('Map links must start with https:// or http://.'); return; }
     this.busy.set(true);
     this.error.set('');
     try {
       if (this.id()) {
         const scope = this.scope() === 'following' ? '?scope=following' : '';
         const v = await this.api.send<EventView>('PATCH', `/api/v1/events/${this.id()}${scope}`, { ...this.body(), rev: this.rev }, 'EventView');
-        await this.router.navigate(['/events', v.event.id]);
+        this.rev = v.event.rev;
+        this.wasDraft.set(v.event.status === 'draft');
+        this.allowed.set(v.can_edit);
+        this.saved.set(v.can_edit ? 'Event saved.' : 'Event saved. You no longer have permission to edit it.');
       } else if (this.repeat()) {
         const s = await this.api.send<SeriesView>(
           'POST',
           `/api/v1/groups/${this.group}/series`,
-          { event: this.body(), rule: this.repeat(), every: this.every(), window: this.window() },
+          { event: this.body(), rule: this.repeat(), every: this.every(), nth: this.nth() || undefined, until: fromLocalInput(this.repeatUntil()), count: this.repeatCount(), window: this.window() },
           'SeriesView',
         );
         const first = s.upcoming[0];

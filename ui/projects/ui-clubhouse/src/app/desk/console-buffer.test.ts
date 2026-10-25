@@ -46,3 +46,34 @@ describe('buffers', () => {
     expect(answer).toMatchObject({ status: 'going', plus: 1, when: [2], bring: [5], rev_seen: 3 });
   });
 });
+
+
+describe('preserving existing rich event data', () => {
+  it('changes only the title even when stored fields contain separators and precise times', () => {
+    const d = { ...blankDraft('poll', 1_900_000_023), poll_locked: true, title: 'Old title',
+      about: `Paragraph one.
+
+Paragraph two.`, plus_max: 7, reminder_secs: 12345,
+      bring: [{ id: 7, name: 'Salt, pepper #1', count: 3 }],
+      questions: [{ id: 8, kind: 'choice' as const, prompt: 'Pick A | B?', choices: ['Red, green', 'Blue'] }],
+      when: [{ id: 9, start: 1_900_000_023, end: 1_900_200_045 }],
+      shifts: [{ id: 10, name: 'Cook | clean', start: 1_900_000_023, end: 1_900_200_045, count: 2 }],
+    };
+    const text = eventBuffer(d, 'Edit', false).replace('title: Old title', 'title: New title');
+    const result = readEvent(text, d);
+    expect(result.errors).toEqual([]);
+    expect(result.draft).toEqual({ ...d, title: 'New title' });
+  });
+
+  it('keeps question and bring identities when text rows are reordered', () => {
+    const d = { ...blankDraft(),
+      bring: [{ id: 7, name: 'Salad', count: 1 }, { id: 8, name: 'Pie', count: 1 }],
+      questions: [{ id: 9, kind: 'yesno' as const, prompt: 'Coming?', choices: [] }, { id: 10, kind: 'text' as const, prompt: 'Notes?', choices: [] }],
+    };
+    const result = readEvent(`bring: Pie, Salad
+questions: text Notes? | yesno Coming?`, d);
+    expect(result.errors).toEqual([]);
+    expect(result.draft.bring.map(x => x.id)).toEqual([8, 7]);
+    expect(result.draft.questions.map(x => x.id)).toEqual([10, 9]);
+  });
+});

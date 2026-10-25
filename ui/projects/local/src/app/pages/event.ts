@@ -43,6 +43,7 @@ import { value } from './auth';
           <p class="aside"><a [href]="'/api/v1/events/' + v.event.id + '.ics'">Add to my calendar</a></p>
         }
         @if (series(); as s) {
+          <p><a [routerLink]="['/series', s.id]">Series settings and regular attendance</a></p>
           <p class="aside">{{ s.summary }} ·
             <label class="switch inline"><input type="checkbox" [checked]="s.regular" (change)="regular(!s.regular)" /> I'm a regular (going to every one)</label></p>
         }
@@ -61,6 +62,7 @@ import { value } from './auth';
           @if (theirs(); as r) {
             <p class="aside">Now: {{ statusLabel[r.status] }}@if (r.by_name) {, answered by {{ r.by_name }}}@if (r.over_policy) { <span class="error"> · more guests than now allowed</span>}</p>
           }
+          @if (!privateAnswer()) { <p>Private diet and question answers are kept unchanged when answering for a household member.</p> }
           <form (submit)="send($event)">
             <div class="segmented">
               @for (s of choices; track s) {
@@ -120,11 +122,11 @@ import { value } from './auth';
                   }
                 </fieldset>
               }
-              @if (has('diet')) {
+              @if (has('diet') && privateAnswer()) {
                 <label>{{ v.event.diet_prompt || 'Allergies or diet?' }} <small>only hosts see this</small>
                   <input maxlength="200" [value]="form().diet" (input)="patch({ diet: v2($event) })" /></label>
               }
-              @if (has('questions')) {
+              @if (has('questions') && privateAnswer()) {
                 @for (q of v.event.questions; track q.id) {
                   <label>{{ q.prompt }}
                     @if (q.kind === 'text') {
@@ -141,7 +143,7 @@ import { value } from './auth';
             <label>Note <small>everyone sees it</small> <input maxlength="200" [value]="form().note" (input)="patch({ note: v2($event) })" /></label>
             @if (saved()) { <p class="ok" role="status">{{ saved() }}</p> }
             @if (formError()) { <p class="error" role="alert">{{ formError() }}</p> }
-            <button type="submit" [disabled]="busy()">Send my answer</button>
+            <button type="submit" [disabled]="busy() || !answersReady()">Save answer</button>
           </form>
         </section>
       } @else if (v.locked && v.mine) {
@@ -154,12 +156,19 @@ import { value } from './auth';
           <ul class="accounts">
             @for (r of rsvps(); track r.person) {
               <li [class.disabled]="r.status === 'no'">
-                <div><strong>{{ r.display_name }}</strong>@if (r.plus) { <small>+{{ r.plus }}{{ r.kids ? ' (' + r.kids + ' kids)' : '' }}</small> }
+                <div><a [routerLink]="['/groups', v.group_slug, 'members', r.person]"><strong>{{ r.display_name }}</strong></a>@if (r.plus) { <small>+{{ r.plus }}{{ r.kids ? ' (' + r.kids + ' kids)' : '' }}</small> }
                   <small>{{ statusLabel[r.status] }}</small>
                   @if (r.by_name) { <small>by {{ r.by_name }}</small> }
                   @if (r.over_policy) { <small class="error">over the guest limit</small> }</div>
                 @if (r.note) { <span class="aside">{{ r.note }}</span> }
                 @if (r.bring.length || r.bring_other) { <span class="aside">Bringing {{ bringing(r) }}</span> }
+                @if (r.names) { <span class="aside">Guests: {{ r.names }}</span> }
+                @if (v.can_edit || r.person === me()) {
+                  @for (a of r.answers; track a.question) { <span class="aside">{{ questionLabel(a.question) }}: {{ a.value }}</span> }
+                }
+                @if (r.shifts.length) { <span class="aside">Shifts: {{ shiftNames(r.shifts) }}</span> }
+                @if (r.when.length) { <span class="aside">Time votes: {{ timeNames(r.when) }}</span> }
+                @if (v.can_edit && r.ride) { <span class="aside">Ride: {{ r.ride }} @if (r.seats) { ({{ r.seats }} seats) }</span> }
                 @if (v.can_edit && r.diet) { <span class="aside">Diet: {{ r.diet }}</span> }
               </li>
             }
@@ -179,6 +188,7 @@ import { value } from './auth';
               }
             </div>
           }
+          @if (rideError()) { <p class="error" role="alert">{{ rideError() }}</p> }
           @if (rides(); as b) {
             <h3>Rides</h3>
             <p class="aside">{{ b.offers.length }} driving, {{ b.needs.length }} need a ride; {{ b.spare >= 0 ? b.spare + ' seats spare' : -b.spare + ' seats short' }}.</p>
@@ -190,9 +200,15 @@ import { value } from './auth';
           <div class="actions">
             <button type="button" class="secondary" (click)="cancel()">Cancel event</button>
             @if (v.event.series && series()?.can_edit) {
-              <button type="button" class="secondary" (click)="endSeries()">Stop repeating</button>
+              <a class="button secondary" [routerLink]="['/series', v.event.series]">Stop repeating / series settings</a>
             }
           </div>
+        </section>
+      }
+      @if (v.can_edit) {
+        <section class="card"><h2>Delete event</h2>
+          <p>Permanently removes this occurrence and its answers. To tell guests it is off and keep attendance history, cancel it instead.</p>
+          <button type="button" class="secondary" [disabled]="busy()" (click)="deleteEvent()">Delete event permanently</button>
         </section>
       }
     }
@@ -205,6 +221,7 @@ export class EventPage implements OnInit {
   readonly view = signal<EventView | null>(null);
   readonly rsvps = signal<RsvpView[]>([]);
   readonly rides = signal<RideBoard | null>(null);
+  readonly rideError = signal('');
   readonly series = signal<SeriesView | null>(null);
   readonly form = signal<RsvpInput>({ status: 'going', rev_seen: 0 });
   readonly who = signal(0);
@@ -212,6 +229,12 @@ export class EventPage implements OnInit {
   readonly formError = signal('');
   readonly saved = signal('');
   readonly busy = signal(false);
+  readonly answersReady = signal(false);
+  readonly privateAnswer = computed(() => !!this.view()?.can_edit || this.who() === this.me());
+  questionLabel(id: number): string { return this.view()?.event.questions.find(q => q.id === id)?.prompt ?? `Question #${id}`; }
+  shiftNames(ids: number[]): string { return ids.map(id => this.view()?.event.shifts.find(s => s.id === id)?.name ?? `Shift #${id}`).join(', '); }
+  timeNames(ids: number[]): string { return ids.map(id => { const o = this.view()?.event.when.find(o => o.id === id); return o ? when(o.start, o.end) : `Time #${id}`; }).join('; '); }
+
   readonly me = computed(() => this.api.me()?.id ?? 0);
   readonly theirs = computed(() => {
     const v = this.view();
@@ -272,6 +295,7 @@ export class EventPage implements OnInit {
   }
 
   pickWho(id: number): void {
+    if (id !== this.me() && !this.view()?.answer_for.some(p => p.id === id)) return;
     this.who.set(id);
     this.resetForm();
   }
@@ -287,13 +311,15 @@ export class EventPage implements OnInit {
   }
 
   private async load(): Promise<void> {
+    this.answersReady.set(false); this.error.set(''); this.rideError.set(''); this.rides.set(null);
     try {
       const v = await this.api.get<EventView>(`/api/v1/events/${this.id()}`, 'EventView');
       this.view.set(v);
-      const list = await this.api.get<{ rsvps: RsvpView[] }>(`/api/v1/events/${this.id()}/rsvps`, 'RsvpList').catch(() => ({ rsvps: [] }));
+      const list = await this.api.get<{ rsvps: RsvpView[] }>(`/api/v1/events/${this.id()}/rsvps`, 'RsvpList');
       this.rsvps.set(list.rsvps);
+      this.answersReady.set(true);
       this.rides.set(v.can_edit && v.event.modules.includes('rides')
-        ? await this.api.get<RideBoard>(`/api/v1/events/${this.id()}/rides`, 'RideBoard').catch(() => null)
+        ? await this.api.get<RideBoard>(`/api/v1/events/${this.id()}/rides`, 'RideBoard').catch(e => { this.rideError.set('Could not load ride coordination: ' + problem(e)); return null; })
         : null);
       this.series.set(v.event.series
         ? await this.api.get<SeriesView>(`/api/v1/series/${v.event.series}`, 'SeriesView').catch(() => null)
@@ -304,13 +330,22 @@ export class EventPage implements OnInit {
     }
   }
 
+  submission(): RsvpInput {
+    const body = { ...this.form() };
+    if (!this.privateAnswer()) { delete body.diet; delete body.answers; }
+    return body;
+  }
+
   async send(event: Event): Promise<void> {
     event.preventDefault();
+    if (this.busy() || !this.answersReady()) return;
+    const v = this.view();
+    if (!v || (this.who() === this.me() ? !v.can_answer && !v.answer_for.some(p => p.id === this.me()) : !v.answer_for.some(p => p.id === this.who()))) { this.formError.set('You cannot answer for this person.'); return; }
     this.busy.set(true);
     this.formError.set('');
     const who = this.who() === this.me() ? 'me' : String(this.who());
     try {
-      const v = await this.api.send<EventView>('PUT', `/api/v1/events/${this.id()}/rsvps/${who}`, this.form(), 'EventView');
+      const v = await this.api.send<EventView>('PUT', `/api/v1/events/${this.id()}/rsvps/${who}`, this.submission(), 'EventView');
       this.view.set(v);
       const status = (who === 'me' ? v.mine?.status : undefined) ?? this.form().status;
       this.saved.set(status === 'waitlist' ? "It's full: you're on the waitlist, and we'll tell you if a place opens." : 'Saved.');
@@ -345,6 +380,17 @@ export class EventPage implements OnInit {
   cancel(): Promise<void> {
     if (!confirm('Cancel this event? Everyone who answered is told.')) return Promise.resolve();
     return this.act(() => this.api.send('POST', `/api/v1/events/${this.id()}/cancel`, undefined, 'EventView'));
+  }
+
+  async deleteEvent(): Promise<void> {
+    const v = this.view();
+    if (!v?.can_edit || this.busy() || !confirm(`Permanently delete "${v.event.title}" and all its answers? This cannot be undone.`)) return;
+    this.busy.set(true); this.error.set('');
+    try {
+      await this.api.send('DELETE', `/api/v1/events/${this.id()}`, undefined, 'Done');
+      await this.router.navigate(['/groups', v.group_slug]);
+    } catch (e) { this.error.set(problem(e)); }
+    finally { this.busy.set(false); }
   }
 
   regular(on: boolean): Promise<void> {

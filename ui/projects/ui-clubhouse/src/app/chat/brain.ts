@@ -1,9 +1,10 @@
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   EventKind, EventSummary, EventView, GroupView, KIND_INFO, Me, RsvpInput, STATUS_LABEL, blankAnswer, guestLimit, when,
 } from 'party-core';
 import {
+  answerFor, permittedAnswer, regularAttendance, approveRequest, rideBoard, memberHistory,
   Api, EventDraft, answerEvent, blankDraft, hostable, joinGroup, leaveGroup, loadEvent, loadGroup, loadNotices, loadOverview,
   loadPeople, markRead, parseWhen, problem, saveEvent, suggestTimes,
 } from 'party-ng';
@@ -24,17 +25,26 @@ export class Brain {
   /** Events and groups seen lately, for "the potluck" or "game club". */
   private known: { events: EventSummary[]; groups: GroupView[] } = { events: [], groups: [] };
 
+  readonly starting = signal(false);
+
   async start(): Promise<void> {
-    this.chat.clear();
-    await this.chat.typing(this.api.refresh().catch(() => undefined));
-    const status = this.api.status();
-    if (!status) {
-      this.chat.say("I can't reach the board. Is it on, and are you on the home Wi-Fi?", { chips: [{ label: 'Try again', run: () => void this.start() }] });
-      return;
-    }
-    if (status.setup_needed) return this.run(() => this.setup());
-    if (!this.api.me()) return this.run(() => this.welcome());
-    await this.greet();
+    if (this.starting()) return;
+    if (this.chat.messages().length && this.api.me()) { this.chat.say('Back to the conversation.', { chips: this.basics() }); return; }
+    this.starting.set(true);
+    try {
+      this.chat.clear();
+      await this.chat.typing(this.api.refresh().catch(() => undefined));
+      const status = this.api.status();
+      if (!status) {
+        this.chat.say("I can't reach the board. Is it on, and are you on the home Wi-Fi?", { chips: [{ label: 'Try again', run: () => void this.start() }] });
+        return;
+      }
+      if (status.setup_needed || !this.api.me()) {
+        this.starting.set(false);
+        return this.run(() => status.setup_needed ? this.setup() : this.welcome());
+      }
+      await this.run(() => this.greet());
+    } finally { this.starting.set(false); }
   }
 
   /** Runs a flow; a cancelled question ends it quietly, an error is said. */
@@ -86,6 +96,7 @@ export class Brain {
 
   /** Something the person typed (or a chip that stands for typing it). */
   hear(raw: string): void {
+    if (this.starting()) return;
     const text = raw.trim();
     if (!text) return;
     const open = this.chat.question();
@@ -108,8 +119,9 @@ export class Brain {
     }
     if (q.options && q.input === 'none') {
       const t = text.toLowerCase();
-      const hit = q.options.find((o) => o.label.toLowerCase() === t || o.value.toLowerCase() === t)
-        ?? q.options.find((o) => o.label.toLowerCase().includes(t));
+      const matches = q.options.filter(o => o.label.toLowerCase() === t || o.value.toLowerCase() === t);
+      const partial = q.options.filter(o => o.label.toLowerCase().includes(t));
+      const hit = matches.length === 1 ? matches[0] : matches.length === 0 && partial.length === 1 ? partial[0] : undefined;
       if (!hit) {
         this.chat.echo(text);
         this.chat.say(`Pick one of: ${q.options.map((o) => o.label).join(', ')} (or say “cancel”).`);
@@ -125,6 +137,8 @@ export class Brain {
     const t = text.toLowerCase().replace(/[?!.]+$/, '').trim();
     const ref = /\be(\d+)\b/.exec(t)?.[1];
     let m: RegExpExecArray | null;
+    if ((m = /^(regular|rides|household|calendar)\s+e?(\d+)$/.exec(t))) return this.eventAction(m[1], Number(m[2]));
+    if ((m = /^approve\s+(.+)$/.exec(t))) return this.approveFlow(m[1]);
     if (/^(help|\?|what can you do|commands)$/.test(t)) return this.help();
     if (/^(hi|hello|hey|yo|morning|evening)\b/.test(t)) return this.greet();
     if ((m = /^(going|yes|maybe|no|can'?t come|not going)\s+(?:to\s+)?e?(\d+)(?:\s*\+\s*(\d+))?$/.exec(t))) {
@@ -167,6 +181,8 @@ export class Brain {
         '• “groups”, “game club”, “join book club”, “leave walkers”',
         '• “new event”, “new group”',
         '• “people”, “who is priya”, “notifications”, “me”, “change pin”, “sign out”',
+        '• “regular e12”, “rides e12”, “household e12”, “calendar e12”, “approve book-club”',
+        'Open a group to see member profiles and RSVP history. Complex organizer settings open in forms.',
         'Mid-question, “cancel” drops it.',
       ].join('\n'),
       { chips: this.basics() },
@@ -178,7 +194,8 @@ export class Brain {
   private findEvent(t: string): EventSummary | undefined {
     const words = t.replace(/^(the|a|an)\s+/, '').split(/\s+/).filter((w) => w.length > 2);
     if (!words.length) return undefined;
-    return this.known.events.find((e) => words.every((w) => e.title.toLowerCase().includes(w)));
+    const matches = this.known.events.filter(e => words.every(w => e.title.toLowerCase().includes(w)));
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   private async upcoming(): Promise<void> {
@@ -209,8 +226,14 @@ export class Brain {
         { label: "❌ Can't", run: () => this.answerFlowChip(v, 'no') },
       );
     }
+    if (v.answer_for.some(p => p.id !== this.api.me()?.id)) chips.push({ label: 'Answer for someone', run: () => void this.run(() => this.eventAction('household', id)) });
+    if (page.series) chips.push({ label: page.series.regular ? 'Stop regular attendance' : 'Become a regular', run: () => void this.run(() => this.eventAction('regular', id)) });
+    if (v.can_edit && v.event.modules.includes('rides')) chips.push({ label: 'Ride coordination', run: () => void this.run(() => this.eventAction('rides', id)) });
+    if (v.event.start || !v.event.modules.includes('when')) chips.push({ label: 'Add to calendar', run: () => void this.run(() => this.eventAction('calendar', id)) });
+    chips.push({ label: 'Full attendance and host tools', run: () => void this.router.navigate(['/manage/events', id]) });
     chips.push({ label: "Who's coming?", run: () => this.hear(`who is coming to e${id}`), soft: true });
     chips.push({ label: 'Open its page', run: () => void this.router.navigate(['/e', id]), soft: true });
+    if (v.can_edit) chips.push({ label: 'Full event settings', run: () => void this.router.navigate(['/events', id, 'edit']) });
     if (v.can_edit && v.event.status !== 'cancelled') {
       if (v.event.modules.includes('when') && !v.event.start) chips.push({ label: 'Pick the time', run: () => void this.run(() => this.lockFlow(v)) });
       chips.push({ label: 'Change it', run: () => void this.run(() => this.editFlow(v)) });
@@ -247,7 +270,8 @@ export class Brain {
   }
 
   /** Asks only what the event's modules need, then sends the answer. */
-  async answerFlow(v: EventView, status: 'going' | 'maybe' | 'no'): Promise<void> {
+  async answerFlow(v: EventView, status: 'going' | 'maybe' | 'no', person: number | 'me' = 'me'): Promise<void> {
+    const privateFields = person === 'me' || person === this.api.me()?.id || v.can_edit;
     const e = v.event;
     const a: RsvpInput = { ...blankAnswer(e, v.mine), status };
     if (status !== 'no') {
@@ -256,7 +280,7 @@ export class Brain {
         const opts = Array.from({ length: Math.min(max, 4) + 1 }, (_, n) => ({ label: n ? `+${n}` : 'Just me', value: String(n) }));
         a.plus = Number(await this.chat.choose('Bringing anyone?', opts));
         if (a.plus) {
-          a.names = await this.chat.ask('Their names? (or “skip”)', { placeholder: 'e.g. my sister Rosa', optional: true }).then(skip);
+          a.names = await this.optionalAnswer('Their names?', a.names ?? '');
           if (e.modules.includes('diet') || e.kind === 'party' || e.kind === 'potluck') {
             a.kids = Number(await this.chat.choose('Any of them kids?', Array.from({ length: a.plus + 1 }, (_, n) => ({ label: n ? String(n) : 'No', value: String(n) }))));
           }
@@ -288,18 +312,75 @@ export class Brain {
           a.seats = Number(await this.chat.choose(a.ride === 'offer' ? 'How many spare seats?' : 'Seats for how many?', [1, 2, 3, 4].map((n) => ({ label: String(n), value: String(n) }))));
         }
       }
-      if (e.modules.includes('diet')) {
-        a.diet = await this.chat.ask(e.diet_prompt || 'Any allergies or diet the hosts should know? (or “none”)', { optional: true, placeholder: 'e.g. vegetarian' }).then(skip);
+      if (privateFields && e.modules.includes('diet')) {
+        a.diet = await this.optionalAnswer(e.diet_prompt || 'Any allergies or diet the hosts should know?', a.diet ?? '');
       }
-      for (const q of e.modules.includes('questions') ? e.questions : []) {
+      for (const q of privateFields && e.modules.includes('questions') ? e.questions : []) {
         const value = q.kind === 'text'
-          ? await this.chat.ask(q.prompt, { optional: true }).then(skip)
+          ? await this.optionalAnswer(q.prompt, a.answers?.find(a => a.question === q.id)?.value ?? '')
           : await this.chat.choose(q.prompt, (q.kind === 'yesno' ? ['yes', 'no'] : q.choices).map((c) => ({ label: c, value: c })));
         a.answers = [...(a.answers ?? []).filter((x) => x.question !== q.id), { question: q.id, value }];
       }
     }
-    const after = await this.chat.typing(answerEvent(this.api, e.id, a));
-    this.confirmAnswer(after);
+    if (status !== 'no' && e.modules.includes('bring')) a.bring_other = await this.optionalAnswer('Anything else you are bringing?', a.bring_other ?? '');
+    a.note = await this.optionalAnswer('A note for everyone?', a.note ?? '');
+    const after = await this.chat.typing(answerEvent(this.api, e.id, permittedAnswer(a, privateFields), person));
+    if (person === 'me') this.confirmAnswer(after);
+    else this.chat.say('Answer saved for the selected person.', { chips: [{ label: 'See event', run: () => this.hear(`e${e.id}`) }] });
+  }
+
+  private async optionalAnswer(prompt: string, current: string): Promise<string> {
+    if (current) {
+      const choice = await this.chat.choose(`${prompt} Current: ${current}`, [{ label: 'Keep it', value: 'keep' }, { label: 'Change it', value: 'change' }, { label: 'Clear it', value: 'clear' }]);
+      if (choice === 'keep') return current;
+      if (choice === 'clear') return '';
+    }
+    return skip(await this.chat.ask(`${prompt} (or “skip”)`, { optional: true }));
+  }
+
+  private async eventAction(action: string, id: number): Promise<void> {
+    const page = await loadEvent(this.api, id); const v = page.view;
+    if (action === 'regular') {
+      const s = page.series; if (!s) throw new Error('This event is not in a series.');
+      const on = !s.regular;
+      const yes = await this.chat.choose(on ? `Become a regular for ${v.event.title}? Existing answers stay unchanged.` : `Stop regular attendance for ${v.event.title}? Existing RSVPs stay in place.`, [{ label: 'Confirm', value: 'yes' }, { label: 'Keep current setting', value: 'no' }]);
+      if (yes !== 'yes') return;
+      await regularAttendance(this.api, s.id, on); this.chat.say(on ? 'You are now a regular.' : 'Regular attendance stopped. Existing RSVPs remain.');
+    } else if (action === 'household') {
+      const people = v.answer_for.filter(p => p.id !== this.api.me()?.id);
+      if (!people.length) throw new Error('There is nobody you may answer for here.');
+      const id = Number(await this.chat.choose('Who are you answering for?', people.map(p => ({ label: `${p.display_name} (#${p.id})`, value: String(p.id) }))));
+      const person = people.find(p => p.id === id); if (!person) return;
+      const status = await this.chat.choose(`Answer for ${person.display_name}:`, [{ label: 'Going', value: 'going' }, { label: 'Maybe', value: 'maybe' }, { label: "Can't come", value: 'no' }]);
+      await this.answerFlow(await answerFor(this.api, v.event.id, id), status as 'going' | 'maybe' | 'no', id);
+    } else if (action === 'rides') {
+      const b = await rideBoard(this.api, id);
+      this.chat.say([`Ride coordination for ${v.event.title}:`, ...b.needs.map(p => `${p.display_name}: needs ${p.seats} seat(s)`), ...b.offers.map(p => `${p.display_name}: offers ${p.seats} seat(s)`), `${b.spare} spare seats`].join('\n'));
+    } else if (action === 'calendar') {
+      if (!v.event.start && v.event.modules.includes('when')) throw new Error('Pick a time before downloading this poll.');
+      const a = document.createElement('a'); a.href = `/api/v1/events/${id}.ics`; a.download = `event-${id}.ics`; a.click();
+      this.chat.say('Calendar download requested.');
+    }
+  }
+
+  private async approveFlow(slug: string): Promise<void> {
+    const p = await loadGroup(this.api, slug);
+    if (!p.group.can_manage) throw new Error('Only group managers can approve requests.');
+    const pending = p.members.filter(m => m.status === 'requested');
+    if (!pending.length) { this.chat.say('No pending requests.'); return; }
+    const id = Number(await this.chat.choose(`Approve whom in ${p.group.name}?`, pending.map(m => ({ label: `${m.display_name} (#${m.person})`, value: String(m.person) }))));
+    const m = pending.find(m => m.person === id); if (!m) return;
+    if (await this.chat.choose(`Approve ${m.display_name} (#${id}) for ${p.group.name}?`, [{ label: 'Approve', value: 'yes' }, { label: 'Cancel', value: 'no' }]) !== 'yes') return;
+    await approveRequest(this.api, p.group.slug, id); this.chat.say(`${m.display_name} is now a member of ${p.group.name}.`);
+  }
+
+  private async memberFlow(slug: string): Promise<void> {
+    const p = await loadGroup(this.api, slug);
+    if (!p.members.length) { this.chat.say('No visible members.'); return; }
+    const id = Number(await this.chat.choose('Whose profile and attendance?', p.members.map(m => ({ label: `${m.display_name} (#${m.person})`, value: String(m.person) }))));
+    if (!p.members.some(m => m.person === id)) return;
+    const h = await memberHistory(this.api, slug, id);
+    this.chat.say(['Upcoming RSVPs:', ...h.upcoming.map(e => `${e.title}: ${e.status} · ${when(e.start)}`), 'Retained history:', ...h.past.map(e => `${e.title}: ${e.status} · ${when(e.start)}`), 'Only visible, retained events are included.'].join('\n'), { chips: [{ label: 'Profile and member settings', run: () => void this.router.navigate(['/groups', slug, 'members', id]) }] });
   }
 
   private confirmAnswer(v: EventView): void {
@@ -329,7 +410,7 @@ export class Brain {
       });
       return;
     }
-    let group = groups.find((g) => g.slug === groupSlug) ?? (groups.length === 1 ? groups[0] : undefined);
+    let group = groups.find((g) => g.slug === groupSlug);
     if (!group) {
       const picked = await this.chat.choose('Which group is it for?', groups.map((g) => ({ label: g.name, value: String(g.id) })));
       group = groups.find((g) => g.id === Number(picked))!;
@@ -352,7 +433,7 @@ export class Brain {
       ]);
       d.end = Number(len) ? d.start + Number(len) : 0;
       d.repeat = (await this.chat.choose('Does it repeat?', [
-        { label: 'Just once', value: '' }, { label: 'Every week', value: 'weekly' }, { label: 'Monthly', value: 'monthly-nth' },
+        { label: 'Just once', value: '' }, { label: 'Every week', value: 'weekly' }, { label: 'Monthly', value: 'monthly-nth' }, { label: 'Yearly birthday (Feb 29 uses Feb 28 in non-leap years)', value: 'yearly' },
       ])) as EventDraft['repeat'];
     }
     const where = await this.chat.ask('Where? (a place, or “tbd”)', { placeholder: 'e.g. The back room at Hops & Co', options: [{ label: 'To be decided', value: 'tbd' }] });
@@ -434,7 +515,8 @@ export class Brain {
   private findGroup(t: string): GroupView | undefined {
     const words = t.replace(/^(the|a)\s+/, '').split(/\s+/).filter((w) => w.length > 2);
     if (!words.length) return undefined;
-    return this.known.groups.find((g) => words.every((w) => g.name.toLowerCase().includes(w) || g.slug.includes(w)));
+    const matches = this.known.groups.filter(g => words.every(w => g.name.toLowerCase().includes(w) || g.slug.includes(w)));
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   private async groups(): Promise<void> {
@@ -455,9 +537,14 @@ export class Brain {
     const page = await this.chat.typing(loadGroup(this.api, slug));
     const g = page.group;
     const chips: Chip[] = [];
+    if (g.can_manage && page.members.some(m => m.status === 'requested')) chips.push({ label: 'Approve a request', run: () => void this.run(() => this.approveFlow(g.slug)) });
+    chips.push({ label: 'Member profiles and history', run: () => void this.run(() => this.memberFlow(g.slug)) });
+    chips.push({ label: 'Group management form', run: () => void this.router.navigate(['/manage/groups', g.slug]) });
     if (!g.my_status && g.join !== 'invite') chips.push({ label: g.join === 'open' ? 'Join' : 'Ask to join', run: () => this.hear(`join ${g.slug}`) });
     if (g.my_status) chips.push({ label: g.my_status === 'requested' ? 'Withdraw request' : 'Leave', run: () => this.hear(`leave ${g.slug}`), soft: true });
     if (g.can_create_events) chips.push({ label: 'Host something here', run: () => void this.run(() => this.hostFlow(g.slug)) });
+    if (g.can_manage) chips.push({ label: 'Invite people', run: () => void this.router.navigate(['/groups', g.slug, 'invite']) });
+    if (g.can_create_events) chips.push({ label: 'Bulk add events', run: () => void this.router.navigate(['/groups', g.slug, 'bulk']) });
     for (const e of page.events.slice(0, 3)) chips.push({ label: short(e.title), run: () => this.hear(`e${e.id}`) });
     chips.push({ label: 'Open the group page', run: () => void this.router.navigate(['/groups', g.slug]), soft: true });
     this.chat.say('', { card: { type: 'group', page }, chips });
@@ -508,7 +595,7 @@ export class Brain {
 
   private async people(q: string): Promise<void> {
     const people = await this.chat.typing(loadPeople(this.api, q.replace(/^(is|for)\s+/, '')));
-    this.chat.say(people.length ? (q ? `Matching “${q}”:` : 'People you can find here:') : `Nobody matching “${q}”.`, { card: { type: 'people', people } });
+    this.chat.say(people.length ? (q ? `Matching “${q}”:` : 'People you can find here:') : `Nobody matching “${q}”.`, { card: { type: 'people', people }, chips: people.slice(0, 8).map(p => ({ label: `Open ${p.display_name}`, run: () => void this.router.navigate(['/people', p.id]) })) });
   }
 
   private async profile(): Promise<void> {
@@ -516,8 +603,10 @@ export class Brain {
     this.chat.say("That's you:", {
       card: { type: 'me', me },
       chips: [
+        { label: 'Full account settings', run: () => void this.router.navigate(['/me']) },
+        ...(me.role === 'admin' ? [{ label: 'Household administration', run: () => void this.router.navigate(['/admin']) }, { label: 'Channel administration', run: () => void this.router.navigate(['/admin/channels']) }] : []),
         { label: 'Change my name', run: () => void this.run(() => this.editMe('display_name', 'What should people call you?')) },
-        { label: 'Change my bio', run: () => void this.run(() => this.editMe('bio', 'A line about you (280 characters at most)?')) },
+        { label: 'Change my bio', run: () => void this.run(() => this.editMe('bio', 'A line about you (2400 characters at most)?')) },
         { label: 'Who can find me', run: () => void this.run(() => this.discoverable()) },
         { label: 'Change PIN', run: () => this.hear('change pin') },
         { label: 'Sign out', run: () => this.hear('sign out'), soft: true },

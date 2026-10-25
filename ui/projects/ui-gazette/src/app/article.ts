@@ -23,7 +23,7 @@ import { Api, answerEvent, EventPage, loadEvent, problem, relative } from 'party
         <div class="spread">
           <div class="columns body">
             <p class="drop">{{ e.about || 'The hosts have not supplied further particulars.' }}</p>
-            @if (p.series) { <p><em>This is a regular fixture: {{ p.series.summary.toLowerCase() }}.</em></p> }
+            @if (p.series) { <p><a [routerLink]="['/series', p.series.id]">Series settings and regular attendance</a></p><p><em>This is a regular fixture: {{ p.series.summary.toLowerCase() }}.</em></p> }
             <h2 class="rule">The guest list</h2>
             <p>
               @for (r of attending(); track r.person; let last = $last) { <span class="smallcaps">{{ r.display_name }}</span>@if (r.plus) { (with {{ r.plus }}) }@if (r.status === 'maybe') { <em> (perhaps)</em> }@if (r.status === 'waitlist') { <em> (waiting)</em> }{{ last ? '.' : ', ' }} }
@@ -32,7 +32,7 @@ import { Api, answerEvent, EventPage, loadEvent, problem, relative } from 'party
             @if (regrets().length) { <p class="small">Regrets from {{ regrets().join(', ') }}.</p> }
           </div>
           <aside class="particulars">
-            <h2>The particulars</h2>
+            <h2>The particulars</h2><p><a [routerLink]="['/manage/events', e.id]">Full attendance, answer for someone, and host ride tools</a></p>
             <dl>
               <dt>When</dt><dd>{{ e.start ? when(e.start, e.end) : 'To be settled by vote' }}</dd>
               <dt>Where</dt><dd>{{ where() }}</dd>
@@ -41,6 +41,8 @@ import { Api, answerEvent, EventPage, loadEvent, problem, relative } from 'party
               @if (e.rsvp_by) { <dt>Reply by</dt><dd>{{ when(e.rsvp_by) }}</dd> }
               @if (e.bring.length) { <dt>Wanted</dt><dd>@for (s of e.bring; track s.id; let last = $last) { {{ s.name }} ({{ left(s.id, s.count) }} still){{ last ? '' : '; ' }} }</dd> }
             </dl>
+            @if (v.can_edit) { <p><a [routerLink]="['/events', e.id, 'edit']">Hosts and access · full editor</a></p> }
+            @if (e.map) { <p><a [href]="e.map" target="_blank" rel="noopener">Open map</a></p> }
             @if (v.can_edit && e.status !== 'cancelled' && e.status !== 'done') {
               <p class="small"><a routerLink="/press" [queryParams]="{ edit: e.id }">Correct this story</a> · <button type="button" class="tiny" (click)="cancel()">spike it (cancel)</button></p>
             }

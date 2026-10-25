@@ -22,7 +22,7 @@ describe('datetime-local round trip', () => {
 
 describe('labels', () => {
   it('formats times and headcounts', () => {
-    expect(when(0)).toBe('');
+    expect(when(0)).toBe('Time not yet determined');
     expect(when(1_893_456_000, 1_893_456_000 + 3 * 3600)).toContain('–');
     expect(headline(4, 10)).toBe('4 of 10 places taken');
     expect(headline(3, 0, 2)).toBe('3 going · 2 maybe');

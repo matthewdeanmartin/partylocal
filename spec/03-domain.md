@@ -119,6 +119,7 @@ A **series** holds the rule, and **occurrences** are real events.
 - Rules: weekly / every N weeks on a weekday, monthly on the Nth weekday
   ("first Friday", "last Sunday"), monthly on a date. Start date, optional end
   date or count. Times are wall-clock in the instance time zone, so DST works.
+- Yearly (`yearly`) keeps the first event's month/date and wall-clock time in the board timezone. February 29 is observed on February 28 in non-leap years and restored on February 29 in leap years, including the Gregorian century rule. Creation uses a future first occurrence; for leap-day birthdays, use the next February 29 to retain the original date. Existing count/until/window limits apply.
 - Occurrences are materialized on a **rolling window**: the next 4 (configurable
   1–8), created as each one passes. Open-ended series cost bounded storage.
 - Editing a series asks "this one / this and following". "This one" turns the

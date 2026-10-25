@@ -100,7 +100,7 @@ function dispatch(b: Board, method: string, url: URL, body: Body): Reply {
       if (s.people.some((x) => x.id !== c && x.display_name.toLowerCase() === name.toLowerCase())) {
         throw new Fail(409, 'name_taken', "Someone already uses that display name (it's also a sign-in name)");
       }
-      if (body['bio'] !== undefined && String(body['bio']).length > 280) throw new Fail(400, 'bad_request', 'About you: at most 280 characters');
+      if (body['bio'] !== undefined && String(body['bio']).length > 2400) throw new Fail(400, 'bad_request', 'About you: at most 2400 characters');
       p.display_name = name;
       p.email = email;
       if (body['bio'] !== undefined) p.bio = String(body['bio']).trim();
@@ -437,21 +437,25 @@ function dispatch(b: Board, method: string, url: URL, body: Body): Reply {
     const series = s.series.find((x) => x.id === sid);
     if (method === 'GET' && !a2) return reply(b.seriesView(c, sid));
     if (method === 'PUT' && a2 === 'regular' && series) {
+      b.seriesView(c, sid);
+      const can = s.events.some(e => e.series === sid && b.eventAccess(c, e).answer) || b.group(series.group)?.members.some(m => m.person === c && m.status === 'active');
+      if (!can) throw new Fail(403, 'not_allowed', 'Join the group to be a regular');
       series.regulars = series.regulars.filter((p) => p !== c);
       if (body['on']) {
         series.regulars.push(c);
-        for (const e of s.events.filter((x) => x.series === sid && x.status === 'scheduled' && x.start > b.now)) b.setGoing(e.id, c);
+        for (const e of s.events.filter((x) => x.series === sid && x.status === 'scheduled' && x.start > b.now && b.eventAccess(c, x).answer && !b.rsvp(x.id, c))) b.setGoing(e.id, c);
       }
       return reply(b.seriesView(c, sid));
     }
     if (method === 'DELETE' && !a2 && series) {
+      if (!b.seriesView(c, sid).can_edit) throw new Fail(403, 'not_allowed', 'Only hosts can stop this series');
       series.status = 'ended';
       if (q.get('cancel') && q.get('cancel') !== '0') {
         for (const e of s.events.filter((x) => x.series === sid && x.status === 'scheduled' && x.start > b.now)) b.cancelEvent(c, e.id);
       }
       return reply(ok);
     }
-    if (method === 'PATCH' && !a2) return reply(b.seriesView(c, sid));
+    if (method === 'PATCH' && !a2) { b.updateSeries(c, sid, body); return reply(b.seriesView(c, sid)); }
   }
 
   if (a0 === 'invitations' && a1) {

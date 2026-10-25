@@ -1,5 +1,7 @@
 # Sprints
 
+The interface coverage follow-up is tracked in [six interface sprints](interface-sprints.md).
+
 Each sprint is one focused chunk of work that can be handed to one agent or
 person, not a calendar week. Each ends with a demo on the desktop build, plus
 the board from Sprint 0 on.

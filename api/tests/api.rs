@@ -900,6 +900,19 @@ fn potluck_walk() {
         let path = format!("/api/v1/events/{event}");
         let r = call(&app, "GET", &path, Some(&people[0]), "");
         assert_eq!(r.json("can_answer"), "true", "{}", r.body);
+        // The creator initially occupies a place; Dad opts out for this capacity scenario.
+        assert_eq!(call(&app, "GET", &path, Some(&dad), "").json("heads"), "1");
+        assert_eq!(
+            call(
+                &app,
+                "PUT",
+                &format!("{path}/rsvps/me"),
+                Some(&dad),
+                r#"{"status":"no","rev_seen":1}"#
+            )
+            .status,
+            200
+        );
         // Son +1 bringing pie, Grandma +1 bringing salad: 4 heads, full.
         let son = r#"{"status":"going","plus":1,"bring":[1],"rev_seen":1}"#;
         assert_eq!(

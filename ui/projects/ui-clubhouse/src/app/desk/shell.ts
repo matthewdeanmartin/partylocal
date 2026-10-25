@@ -1,3 +1,4 @@
+import { loadFeatureStyle } from '../feature-styles';
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Api } from 'party-ng';
@@ -71,6 +72,7 @@ import { SHORTCUTS, Shortcuts } from './shortcuts';
   `,
 })
 export class DeskShell {
+  private readonly featureStyle = loadFeatureStyle('desk');
   readonly api = inject(Api);
   readonly theme = inject(Theme);
   readonly view = inject(View);

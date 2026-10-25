@@ -1,10 +1,11 @@
+import { MobileEventTools, MobileMemberTools } from './social';
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import {
   colour, count, EventSummary, EventView, GroupView, headline, initials, KIND_INFO, Me, NOTICE_TEXT, NoticeView, PersonView, RsvpInput,
   STATUS_LABEL, when,
 } from 'party-core';
-import { Api, EventPage, GroupPage, joinGroup, leaveGroup, loadEvent, loadGroup, loadNotices, loadOverview, loadPeople, markRead, problem, relative } from 'party-ng';
+import { answerFor, Api, EventPage, GroupPage, joinGroup, leaveGroup, loadEvent, loadGroup, loadNotices, loadOverview, loadPeople, markRead, problem, relative } from 'party-ng';
 import { Steps } from './steps';
 import { Toast } from './toast';
 import { View } from '../view';
@@ -111,7 +112,7 @@ export class Groups implements OnInit {
 /** One group, full screen, with a sticky join bar. */
 @Component({
   selector: 'deck-group',
-  imports: [RouterLink],
+  imports: [RouterLink, MobileMemberTools],
   template: `
     @if (page(); as p) {
       @let g = p.group;
@@ -130,6 +131,7 @@ export class Groups implements OnInit {
             @if (e.my_status) { <em [attr.data-s]="e.my_status">{{ label(e.my_status) }}</em> }
           </a>
         } @empty { <p class="none">Nothing planned yet.</p> }
+        <mobile-member-tools [page]="p" prefix="/m" (changed)="ngOnInit()" />
         @if (p.members.length) {
           <h2 class="section">Members</h2>
           <div class="faces">@for (m of p.members; track m.person) { <span class="face" [style.background]="tint(m.person + 50)" [title]="m.display_name + (m.status === 'requested' ? ' (asked to join)' : '')" [class.pending]="m.status === 'requested'">{{ initials(m.display_name) }}</span> }</div>
@@ -138,6 +140,8 @@ export class Groups implements OnInit {
       <div class="sticky">
         @if (!g.my_status && g.join !== 'invite') { <button type="button" class="go" (click)="act('join')">{{ g.join === 'open' ? 'Join group' : 'Ask to join' }}</button> }
         @if (g.my_status === 'requested') { <button type="button" class="ghost wide" (click)="act('leave')">Withdraw request</button> }
+        <p><a [routerLink]="['/groups', g.slug]">Members and group details</a></p>
+        @if (g.can_manage) { <a class="ghost" [routerLink]="['/groups', g.slug, 'invite']">Invite people</a> }
         @if (g.can_create_events) { <a class="go" routerLink="/m/new" [queryParams]="{ group: g.slug }">＋ New event</a> }
         @if (g.my_status === 'active') { <button type="button" class="ghost" (click)="act('leave')">Leave</button> }
       </div>
@@ -189,7 +193,7 @@ export class Group implements OnInit {
 /** One event, full screen: a hero, the facts, faces, and the answer bar. */
 @Component({
   selector: 'deck-event',
-  imports: [RouterLink, Steps],
+  imports: [RouterLink, Steps, MobileEventTools],
   template: `
     @if (page(); as p) {
       @let v = p.view;
@@ -209,6 +213,7 @@ export class Group implements OnInit {
           <li>🙋 <span>{{ v.host_names.join(', ') }}<small>{{ v.host_names.length === 1 ? 'host' : 'hosts' }}</small></span></li>
           @if (e.cost) { <li>💶 <span>{{ e.cost }}</span></li> }
         </ul>
+        <mobile-event-tools [page]="p" (changed)="ngOnInit()" />
         @if (e.about) { <p class="about">{{ e.about }}</p> }
         @if (e.bring.length) {
           <h2 class="section">Bring list</h2>
@@ -227,7 +232,11 @@ export class Group implements OnInit {
           </div>
         }
       </div>
-      @if (v.can_answer) {
+      @if (v.can_answer || v.answer_for.length) {
+        <div class="page-body"><label>Answering for <select aria-label="Answering for" [value]="target()" [disabled]="loadingAnswer() || !!asking()" (change)="target.set($any($event.target).value)">
+          @if (v.can_answer) { <option value="me">Myself</option> }
+          @for (person of v.answer_for; track person.id) { <option [value]="person.id">{{ person.display_name }}</option> }
+        </select></label></div>
         <div class="sticky answer-bar">
           @if (v.mine) { <span class="mine" [attr.data-s]="v.mine.status">{{ label(v.mine.status) }}</span> }
           <button type="button" class="round no" (click)="ask('no')" aria-label="Can't come">✕</button>
@@ -235,7 +244,7 @@ export class Group implements OnInit {
           <button type="button" class="round yes" (click)="ask('going')" aria-label="Going">✓</button>
         </div>
       }
-      @if (asking()) { <deck-steps [view]="v" [status]="asking()!" (done)="answered($event)" (cancel)="asking.set(null)" /> }
+      @if (asking() && answerView()) { <deck-steps [view]="answerView()!" [target]="targetId()" [targetName]="targetName()" [privateFields]="target() === 'me' || v.can_edit || targetId() === meId()" [status]="asking()!" (done)="answered($event)" (cancel)="asking.set(null)" /> }
     }
   `,
 })
@@ -244,6 +253,12 @@ export class EventScreen implements OnInit {
   private readonly api = inject(Api);
   private readonly toast = inject(Toast);
   readonly page = signal<EventPage | null>(null);
+  readonly target = signal('me');
+  readonly loadingAnswer = signal(false);
+  readonly answerView = signal<EventView | null>(null);
+  readonly meId = computed(() => this.api.me()?.id ?? 0);
+  readonly targetName = computed(() => this.target() === 'me' ? 'yourself' : this.page()?.view.answer_for.find(p => p.id === Number(this.target()))?.display_name ?? 'selected person');
+  readonly targetId = computed(() => this.target() === 'me' ? this.meId() : Number(this.target()));
   readonly asking = signal<RsvpInput['status'] | null>(null);
   readonly going = computed(() => (this.page()?.rsvps ?? []).filter((r) => r.status !== 'no'));
   readonly when = when;
@@ -253,28 +268,27 @@ export class EventScreen implements OnInit {
 
   async ngOnInit(): Promise<void> {
     try {
-      this.page.set(await loadEvent(this.api, Number(this.id())));
+      const page = await loadEvent(this.api, Number(this.id()));
+      this.page.set(page);
+      if (this.target() === 'me' && !page.view.can_answer && page.view.answer_for.length) this.target.set(String(page.view.answer_for[0].id));
     } catch (e) {
       this.toast.say(problem(e));
     }
   }
 
   async ask(status: RsvpInput['status']): Promise<void> {
-    if (status !== 'no') {
-      this.asking.set(status);
-      return;
-    }
-    const v = this.page()!.view;
+    if (this.loadingAnswer()) return;
+    this.loadingAnswer.set(true);
     try {
-      this.answered(await this.api.send<EventView>('PUT', `/api/v1/events/${v.event.id}/rsvps/me`, { status: 'no', rev_seen: v.event.rev }, 'EventView'));
-    } catch (e) {
-      this.toast.say(problem(e));
-    }
+      this.answerView.set(await answerFor(this.api, this.page()!.view.event.id, this.targetId()));
+      this.asking.set(status);
+    } catch(e) { this.toast.say(problem(e)); }
+    finally { this.loadingAnswer.set(false); }
   }
 
   async answered(v: EventView): Promise<void> {
     this.asking.set(null);
-    this.toast.say(`Saved: ${this.label(v.mine?.status ?? '')}`);
+    this.toast.say(this.target() === 'me' ? `Saved: ${this.label(v.mine?.status ?? '')}` : 'Answer saved for the selected person.');
     await this.ngOnInit();
   }
 
@@ -353,6 +367,7 @@ export class Inbox implements OnInit {
 /** Me: an iOS-style settings list; each row opens a sheet. */
 @Component({
   selector: 'deck-me',
+  imports: [RouterLink],
   template: `
     @if (me(); as m) {
       <div class="hero-page small" [style.--c]="tint(m.id + 50)"><span class="ini big">{{ initials(m.display_name) }}</span><h1>{{ m.display_name }}</h1><p>{{ m.role }}{{ m.household_name ? ' · ' + m.household_name : '' }}</p></div>
@@ -370,7 +385,9 @@ export class Inbox implements OnInit {
         </ul>
         <h2 class="section">People you can find</h2>
         <input class="big" type="search" placeholder="Search people" (input)="search($any($event.target).value)" />
-        <ul class="feed">@for (p of people(); track p.id) { <li><span class="row"><span class="face" [style.background]="tint(p.id + 50)">{{ initials(p.display_name) }}</span><span><b>{{ p.display_name }}</b><small>{{ p.bio }}</small></span></span></li> }</ul>
+        <ul class="feed">@for (p of people(); track p.id) { <li><a class="row" [routerLink]="['/m/people', p.id]"><span class="face" [style.background]="tint(p.id + 50)">{{ initials(p.display_name) }}</span><span><b>{{ p.display_name }}</b><small>{{ p.bio }}</small></span></a></li> }</ul>
+        <p><a routerLink="/me">Full account settings</a></p>
+        @if (m.role === 'admin') { <p><a routerLink="/admin">Household administration</a> · <a routerLink="/admin/channels">Channel settings</a></p> }
         <button type="button" class="ghost wide danger" (click)="signOut()">Sign out</button>
       </div>
       @if (editing(); as ed) {
@@ -381,7 +398,7 @@ export class Inbox implements OnInit {
               <input class="big" type="password" inputmode="numeric" placeholder="Current PIN" autocomplete="current-password" (input)="current = val($event)" />
               <input class="big" type="password" inputmode="numeric" placeholder="New PIN (4–8 digits)" autocomplete="new-password" (input)="ed.value = val($event)" />
             } @else if (ed.field === 'bio') {
-              <textarea class="big" rows="4" maxlength="280" [value]="ed.value" (input)="ed.value = val($event)"></textarea>
+              <textarea class="big" rows="4" maxlength="2400" [value]="ed.value" (input)="ed.value = val($event)"></textarea>
             } @else {
               <input class="big" [value]="ed.value" (input)="ed.value = val($event)" />
             }

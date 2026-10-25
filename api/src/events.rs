@@ -462,8 +462,8 @@ impl State {
             if e.when.len() < 2 {
                 return Err(ApiError::bad_request("A time poll needs at least 2 times"));
             }
-        } else if e.start == 0 {
-            return Err(ApiError::bad_request("An event needs a start time"));
+        } else if e.start == 0 && e.end != 0 {
+            return Err(ApiError::bad_request("Set a start time before an end time"));
         }
         if e.end != 0 && e.end < e.start {
             return Err(ApiError::bad_request("The end is before the start"));
@@ -554,7 +554,7 @@ impl State {
             return Err(full("upcoming events", self.limits.upcoming_events));
         }
         let mut e = self.build_event(actor, group, input, now)?;
-        if e.status == SCHEDULED && !e.polling() && e.start <= now {
+        if e.status == SCHEDULED && e.start != 0 && e.start <= now {
             return Err(ApiError::bad_request("Pick a time in the future"));
         }
         let id = self.next_event;
@@ -564,6 +564,7 @@ impl State {
         let status = e.status.clone();
         self.events.push(e);
         if status == SCHEDULED {
+            self.set_going(id, actor, now);
             for p in invitees {
                 self.notify(p, "invited", id, actor, now);
             }
@@ -620,6 +621,9 @@ impl State {
         *self.events.get_mut(id).expect("checked above") = next;
         let now_scheduled = self.event(id).is_some_and(|e| e.status == SCHEDULED);
         if now_scheduled {
+            if was_draft {
+                self.set_going(id, before.created_by, now);
+            }
             for p in new_invitees {
                 self.notify(p, "invited", id, actor, now);
             }
@@ -758,7 +762,7 @@ impl State {
         let mut changed = false;
         for i in 0..self.events.len() {
             let e = &self.events[i];
-            if e.status == SCHEDULED && !e.polling() && now >= e.effective_end() {
+            if e.status == SCHEDULED && e.start != 0 && now >= e.effective_end() {
                 self.events[i].status = DONE.into();
                 changed = true;
             }
@@ -938,7 +942,7 @@ impl State {
             .iter()
             .filter(|e| group.is_none_or(|g| e.group == g))
             .filter(|e| {
-                let upcoming = e.active() && (e.polling() || e.effective_end() > now);
+                let upcoming = e.active() && (e.start == 0 || e.effective_end() > now);
                 upcoming != past
             })
             .filter(|e| self.event_access(viewer, e).see)

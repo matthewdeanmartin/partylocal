@@ -1,18 +1,18 @@
+import { allEvents } from 'party-ng';
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import {
-  colour, count, EventList as Events, EventSummary, GroupView, initials, JOIN_LABEL, MemberView, PersonList, ROLE_LABEL,
+  colour, count, EventSummary, GroupView, initials, JOIN_LABEL, MemberView, PersonList, ROLE_LABEL,
   VISIBILITY_LABEL,
 } from 'party-core';
 import { Api, ApiError, problem } from '../api';
 import { EventList } from '../event-list';
-import { InvitePanel } from '../invite-panel';
 import { value } from './auth';
 
 /** One group: about, join/leave, members, and organizer tools. */
 @Component({
   selector: 'party-group',
-  imports: [RouterLink, EventList, InvitePanel],
+  imports: [RouterLink, EventList],
   template: `
     @if (error()) { <p class="error card" role="alert">{{ error() }}</p> }
     @if (group(); as g) {
@@ -64,7 +64,7 @@ import { value } from './auth';
           <ul class="accounts">
             @for (m of active(); track m.person) {
               <li>
-                <div><strong>{{ m.display_name }}</strong> <small>{{ roleLabel[m.role] }}</small></div>
+                <div><a [routerLink]="['/groups', g.slug, 'members', m.person]"><strong>{{ m.display_name }}</strong></a> <small>{{ roleLabel[m.role] }}</small></div>
                 @if (g.can_manage && m.person !== api.me()?.id) {
                   <div class="actions">
                     @if (m.role === 'member') { <button type="button" class="secondary" (click)="set(m, { role: 'co-organizer' })">Make co-organizer</button> }
@@ -91,7 +91,7 @@ import { value } from './auth';
             <ul class="accounts">
               @for (m of requests(); track m.person) {
                 <li>
-                  <strong>{{ m.display_name }}</strong>
+                  <a [routerLink]="['/groups', g.slug, 'members', m.person]"><strong>{{ m.display_name }}</strong></a>
                   <div class="actions">
                     <button type="button" (click)="set(m, { status: 'active' })">Let them in</button>
                     <button type="button" class="secondary" (click)="set(m, { status: 'removed' })">Turn down</button>
@@ -101,19 +101,7 @@ import { value } from './auth';
             </ul>
           </section>
         }
-        <party-invite-panel kind="group" [target]="g.id" />
-        <section class="card">
-          <h2>Add someone</h2>
-          <form (submit)="find($event)" role="search">
-            <label>Name <input type="search" (input)="q.set(v($event))" /></label>
-          </form>
-          <ul class="accounts">
-            @for (p of found(); track p.id) {
-              <li><strong>{{ p.display_name }}</strong>
-                <div class="actions"><button type="button" (click)="add(p.id)">Add</button></div></li>
-            }
-          </ul>
-        </section>
+        <p><a class="button" [routerLink]="['/groups', g.slug, 'invite']">Invite people</a></p>
         @if (g.can_own) {
           <section class="card">
             <h2>Organizer</h2>
@@ -161,7 +149,7 @@ export class Group implements OnInit {
   private async load(): Promise<void> {
     try {
       this.group.set(await this.api.get<GroupView>(this.path(), 'GroupView'));
-      const list = await this.api.get<Events>(`/api/v1/events?group=${this.group()?.id}`, 'EventList').catch(() => null);
+      const list = await allEvents(this.api, `/api/v1/events?group=${this.group()?.id}`);
       this.events.set(list?.events ?? []);
       try {
         this.members.set((await this.api.get<{ members: MemberView[] }>(this.path('/members'), 'MemberList')).members);

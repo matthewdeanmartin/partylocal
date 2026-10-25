@@ -25,6 +25,8 @@ import { Api } from 'party-ng';
             <a routerLink="/societies" routerLinkActive="on">Societies</a>
             <a routerLink="/notices" routerLinkActive="on">Notices@if (api.summary()?.unread) { <sup>{{ api.summary()!.unread }}</sup> }</a>
             <a routerLink="/whos-who" routerLinkActive="on">Who's Who</a>
+            <a routerLink="/account" routerLinkActive="on">Account &amp; household</a>
+            @if (api.me()?.role === 'admin') { <a routerLink="/admin">Administration</a><a routerLink="/admin/channels">Channels</a> }
             <a routerLink="/letters" routerLinkActive="on">Letters</a>
             <a routerLink="/press" routerLinkActive="on" class="press">Submit a Story</a>
           </nav>

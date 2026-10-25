@@ -1,3 +1,4 @@
+import { loadFeatureStyle } from '../feature-styles';
 import { afterRenderEffect, Component, computed, ElementRef, inject, OnInit, output, signal, viewChild } from '@angular/core';
 import { colour, count, headline, initials, KIND_INFO, NOTICE_TEXT, ROLE_LABEL, STATUS_LABEL, when } from 'party-core';
 import { Api, relative } from 'party-ng';
@@ -155,13 +156,15 @@ import { Chat } from './chat';
       }
       <input #box [type]="chat.question()?.input === 'pin' ? 'password' : chat.question()?.input === 'number' ? 'number' : 'text'"
         [attr.inputmode]="chat.question()?.input === 'pin' || chat.question()?.input === 'number' ? 'numeric' : null"
-        [placeholder]="placeholder()" [value]="draft()" (input)="draft.set($any($event.target).value)" aria-label="Message"
+        [placeholder]="placeholder()" [value]="draft()" (input)="draft.set($any($event.target).value)" aria-label="Message" [disabled]="brain.starting()"
         [attr.autocomplete]="chat.question()?.input === 'pin' ? 'current-password' : 'off'" />
-      <button type="submit" [disabled]="!draft().trim()" aria-label="Send">➤</button>
+      <button type="submit" [disabled]="brain.starting() || !draft().trim()" aria-label="Send">➤</button>
     </form>
   `,
 })
 export class ChatPanel implements OnInit {
+  private readonly featureStyle = loadFeatureStyle('chat');
+
   readonly closed = output<void>();
   readonly api = inject(Api);
   readonly chat = inject(Chat);

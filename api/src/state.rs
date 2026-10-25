@@ -249,8 +249,8 @@ pub fn check_discoverable(raw: &str) -> Result<String, ApiError> {
 
 fn bio(raw: &str) -> Result<String, ApiError> {
     let bio = raw.trim();
-    if bio.chars().count() > 280 {
-        return Err(ApiError::bad_request("About you: at most 280 characters"));
+    if bio.chars().count() > 2400 {
+        return Err(ApiError::bad_request("About you: at most 2400 characters"));
     }
     Ok(bio.to_string())
 }

@@ -1,3 +1,4 @@
+import { Router } from '@angular/router';
 import { Component, computed, effect, ElementRef, HostListener, inject, OnInit, signal, untracked, viewChild } from '@angular/core';
 import {
   EventSummary, EventView, GroupView, KIND_INFO, Me, NOTICE_TEXT, NoticeView, PersonView, ROLE_LABEL, STATUS_LABEL, blankAnswer, headline, when,
@@ -20,6 +21,10 @@ const HELP = `party terminal: keys
   enter      events: answer (a) · groups: show its events
   y m n      answer going / maybe / no
   a          answer in an editor (guests, bring list, questions…)
+  :manage    full editor: hosts, access, invitees and map
+  o / tools  full attendance, member tools, or selected profile
+  series     recurring settings and regular attendance
+  new-series create a recurring event in the selected group
   e          edit the event (hosts)     c   new event     C   new group
   J  L       join / leave the group
   p          past events on/off         r   reload
@@ -31,6 +36,8 @@ editor
 commands
   :going [+N]  :maybe  :no  :answer  :edit  :cancel  :lock N
   :new [event|group] [group]  :join [group]  :leave  :open e12
+  :account   account, household, calendar and identity settings
+  :admin  :channels   administrator forms
   :read  :me  :signout  :help`;
 
 @Component({
@@ -102,6 +109,7 @@ commands
   `,
 })
 export class App implements OnInit {
+  private readonly router = inject(Router);
   readonly api = inject(Api);
   readonly tabs = TABS;
   readonly help = HELP;
@@ -288,6 +296,16 @@ export class App implements OnInit {
     if (t !== 'events') this.groupFilter.set(null);
   }
 
+  async openTools(): Promise<void> {
+    if (this.editor()) return this.say('Save or close the text buffer first.', true);
+    if (this.tab() === 'people') {
+      const id = this.rows()[this.cursor()]?.id;
+      if (id) await this.router.navigate(['/people', id]);
+    } else if (this.selectedEvent()) await this.router.navigate(['/events', this.selectedEvent()!.event.id]);
+    else if (this.selectedGroup()) await this.router.navigate(['/groups', this.selectedGroup()!.slug]);
+    else this.say('Select an event, group or person.', true);
+  }
+
   private selectedEvent(): EventView | null {
     const p = this.page();
     return p && 'view' in p ? p.view : null;
@@ -333,6 +351,7 @@ export class App implements OnInit {
     else if (k === 'm') void this.quick('maybe');
     else if (k === 'n') void this.quick('no');
     else if (k === 'a') this.openAnswer();
+    else if (k === 'o') void this.openTools();
     else if (k === 'e') void this.openEdit();
     else if (k === 'c') void this.openNew();
     else if (k === 'C') this.openNewGroup();
@@ -412,6 +431,28 @@ export class App implements OnInit {
           return void (await this.quick(verb, /\+(\d+)/.exec(arg)?.[1]));
         case 'answer':
           return this.openAnswer();
+        case 'account':
+        case 'admin':
+        case 'channels':
+          if (this.editor()) return this.say('Save or close your text buffer first.', true);
+          if (verb !== 'account' && this.api.me()?.role !== 'admin') return this.say('Administrator access required.', true);
+          return void (await this.router.navigateByUrl(verb === 'channels' ? '/admin/channels' : '/' + verb));
+        case 'new-series':
+          if (this.editor()) return this.say('Save or close your text buffer first.', true);
+          if (!this.selectedGroup()?.can_create_events) return this.say('Select a group where you may create events.', true);
+          return void (await this.router.navigate(['/groups', this.selectedGroup()!.id, 'events', 'new'], { queryParams: { series: '1' } }));
+        case 'series':
+          if (this.editor()) return this.say('Save or close your text buffer before opening series settings.', true);
+          if (!this.selectedEvent()?.event.series) return this.say('Select an event in a series.', true);
+          return void (await this.router.navigate(['/series', this.selectedEvent()!.event.series]));
+        case 'tools':
+          return void (await this.openTools());
+        case 'profile':
+          return void (await this.openTools());
+        case 'manage':
+          if (this.editor()) return this.say('Save or close your text buffer before opening event management.', true);
+          if (!this.selectedEvent()?.can_edit) return this.say('Select an event you may edit.', true);
+          return void (await this.router.navigate(['/events', this.selectedEvent()!.event.id, 'edit']));
         case 'edit':
           return void (await this.openEdit());
         case 'cancel':
@@ -494,12 +535,12 @@ export class App implements OnInit {
 
   async openNew(slug = ''): Promise<void> {
     const mine = hostable(this.groups().filter((g) => g.my_status === 'active' || g.can_manage));
-    const g = mine.find((x) => x.slug === slug) ?? (this.selectedGroup() && mine.find((x) => x.id === this.selectedGroup()!.id)) ?? mine[0];
-    if (!g) return this.say("E: you can't create events in any group (C makes a group)", true);
+    const g = mine.find((x) => x.slug === slug) ?? (this.selectedGroup() && mine.find((x) => x.id === this.selectedGroup()!.id));
+    if (!mine.length) return this.say("E: you can't create events in any group (C makes a group)", true);
     const start = new Date();
     start.setDate(start.getDate() + 7);
     start.setHours(19, 0, 0, 0);
-    const text = `group: ${g.slug}`.padEnd(32) + `# ${mine.map((x) => x.slug).join(' ')}\n` + eventBuffer(blankDraft('generic', Math.floor(start.getTime() / 1000)), `New event`, true);
+    const text = `group: ${g?.slug ?? ''}`.padEnd(32) + `# ${mine.map((x) => x.slug).join(' ')}\n` + eventBuffer(blankDraft('generic', Math.floor(start.getTime() / 1000)), `New event`, true);
     this.editor.set({ kind: 'new-event', file: 'new-event.party', text, errors: [], dirty: false });
   }
 

@@ -22,7 +22,7 @@ const FINDABLE: Record<Discoverable, string> = {
           <label>Email <small>optional, never shown to others</small>
             <input type="email" [value]="me.email" (input)="email.set(v($event))" /></label>
           <label>About you <small>optional</small>
-            <textarea rows="3" maxlength="280" [value]="me.bio" (input)="bio.set(v($event))"></textarea></label>
+            <textarea rows="3" maxlength="2400" [value]="me.bio" (input)="bio.set(v($event))"></textarea></label>
           <fieldset>
             <legend>Who can find you</legend>
             @for (o of options; track o) {

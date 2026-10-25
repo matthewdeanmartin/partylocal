@@ -154,10 +154,10 @@ fn vevent(out: &mut String, state: &State, e: &StoredEvent, tentative: bool, pub
     line(out, "END:VEVENT");
 }
 
-/// A single event to download (a poll without a time has nothing to add).
+/// A single event to download (an event without a time has nothing to add).
 pub fn event_file(state: &State, e: &StoredEvent) -> String {
     calendar(&e.title, |out| {
-        if !e.polling() {
+        if e.start != 0 {
             vevent(out, state, e, false, false);
         }
     })
@@ -169,7 +169,7 @@ pub fn feed(state: &State, person: u32, now: u64) -> String {
     let mut events: Vec<(&StoredEvent, bool)> = state
         .events
         .iter()
-        .filter(|e| !e.polling() && e.status != "draft")
+        .filter(|e| e.start != 0 && e.status != "draft")
         .filter(|e| match e.status.as_str() {
             DONE => e.effective_end() + KEEP_DONE > now,
             CANCELLED => e.updated + KEEP_CANCELLED > now,

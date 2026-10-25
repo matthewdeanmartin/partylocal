@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { EventKind, EventView, fromLocalInput, GroupView, KIND_INFO, Me, Module, MODULE_LABEL, toLocalInput } from 'party-core';
-import { Api, blankDraft, draftFrom, EventDraft, hostable, loadHouseholds, loadOverview, problem, saveEvent, withKind } from 'party-ng';
+import { Api, editBringList, needsStructuredBring, editFirstQuestion, blankDraft, draftFrom, EventDraft, hostable, loadHouseholds, loadOverview, problem, saveEvent, withTimePoll, withKind } from 'party-ng';
 import { Theme } from '../theme';
 import { View } from '../view';
 
@@ -12,6 +12,7 @@ import { View } from '../view';
  */
 @Component({
   selector: 'ch-new-event',
+  imports: [RouterLink],
   template: `
     @let L = theme.t();
     @let P = L.press;
@@ -19,15 +20,18 @@ import { View } from '../view';
     <p class="standfirst">{{ editId() ? P.editLede : P.lede }}</p>
     @if (!editId() && !groups().length && loaded()) { <p class="stop">{{ P.noGroups }}</p> }
     @let d = draft();
+    @if (!editId() && group()) { <p><a [routerLink]="['/groups', group(), 'events', 'new']" [queryParams]="{ series: '1' }">Start a recurring event in the full editor</a> (opens a blank form; text entered here is not transferred)</p> }
+    @if (editId()) { <p class="small"><a [routerLink]="['/events', editId(), 'edit']">Open saved event in full editor</a> (save changes here before switching)</p> }
     <form class="slip press" (submit)="send($event)">
       <p class="madlib">
         @if (!editId()) {
-          {{ P.lead }} <select class="blank" [value]="group()" (change)="group.set(+val($event))" aria-label="Group">@for (g of groups(); track g.id) { <option [value]="g.id" [selected]="g.id === group()">{{ g.name }}</option> }</select>
+          {{ P.lead }} <select class="blank" [value]="group()" (change)="group.set(+val($event))" aria-label="Group"><option value="0" disabled>Select a group</option>@for (g of groups(); track g.id) { <option [value]="g.id" [selected]="g.id === group()">{{ g.name }}</option> }</select>
           {{ P.announces }}
           <select class="blank" [value]="d.kind" (change)="kind($any(val($event)))" aria-label="Kind">@for (k of kinds; track k) { <option [value]="k" [selected]="d.kind === k">{{ P.kinds[k] }}</option> }</select>
           {{ P.called }}
         } @else { {{ P.calledEdit }} }
         “<input class="blank wide title" required maxlength="80" [value]="d.title" (input)="set({ title: val($event) })" [placeholder]="P.titleHint" aria-label="Title" />”,
+        <label class="inline-check"><input type="checkbox" [checked]="timeTbd()" (change)="timeTbd.set(!timeTbd()); set({ start: 0, end: 0, repeat: '' })" /> Time not yet determined</label>
         @if (polling()) {
           {{ P.pollLead }}
           @for (o of d.when; track $index; let last = $last) {
@@ -35,9 +39,9 @@ import { View } from '../view';
           }
           <button type="button" class="tiny" (click)="addOption()" [disabled]="d.when.length >= 6">{{ P.anotherTime }}</button>,
         } @else {
-          {{ P.on }} <input class="blank" type="datetime-local" required [value]="local(d.start)" (change)="start(val($event))" aria-label="Starts" />
-          {{ P.until }} <input class="blank" type="time" [value]="hm(d.end)" (change)="end(val($event))" aria-label="Ends" />@if (!editId()) {,
-            <select class="blank" [value]="d.repeat" (change)="set({ repeat: $any(val($event)) })" aria-label="Repeats"><option value="">{{ P.repeat.once }}</option><option value="weekly">{{ P.repeat.weekly }}</option><option value="monthly-nth">{{ P.repeat.nth }}</option><option value="monthly-date">{{ P.repeat.date }}</option></select>
+          {{ P.on }} <input class="blank" type="datetime-local" [required]="!timeTbd()" [disabled]="timeTbd()" [value]="local(d.start)" (change)="start(val($event))" aria-label="Starts" />
+          {{ P.until }} <input class="blank" type="time" [disabled]="timeTbd()" [value]="hm(d.end)" (change)="end(val($event))" aria-label="Ends" />@if (!editId()) {,
+            <select class="blank" [disabled]="timeTbd()" [value]="d.repeat" (change)="set({ repeat: $any(val($event)) })" aria-label="Repeats"><option value="">{{ P.repeat.once }}</option><option value="weekly">{{ P.repeat.weekly }}</option><option value="monthly-nth">{{ P.repeat.nth }}</option><option value="monthly-date">{{ P.repeat.date }}</option><option value="yearly">every year (Feb 29 → Feb 28 in non-leap years)</option></select>
           },
         }
         <select class="blank" [value]="d.where_kind" (change)="set({ where_kind: $any(val($event)) })" aria-label="Where"><option value="place">{{ P.where.place }}</option><option value="home">{{ P.where.home }}</option><option value="tbd">{{ P.where.tbd }}</option></select>
@@ -48,22 +52,25 @@ import { View } from '../view';
         <select class="blank" [value]="d.capacity ? 'limited' : 'unlimited'" (change)="set({ capacity: val($event) === 'limited' ? d.capacity || 12 : 0 })" aria-label="Capacity"><option value="unlimited">{{ P.placesUnlimited }}</option><option value="limited">{{ P.placesLimited }}</option></select>
         @if (d.capacity) { <input class="blank short" type="number" min="1" max="2000" [value]="d.capacity" (input)="set({ capacity: +val($event) })" aria-label="Places" /> {{ P.persons }} }.
         {{ P.eachMay }}
-        <select class="blank" [value]="guests()" (change)="setGuests(val($event))" aria-label="Guests"><option value="none">{{ P.guests.none }}</option><option value="1">{{ P.guests.one }}</option><option value="2">{{ P.guests.two }}</option><option value="3">{{ P.guests.three }}</option><option value="unlimited">{{ P.guests.any }}</option></select>.
-        @if (has('bring')) { {{ P.bringLead }} <input class="blank wide" [value]="bringText()" (change)="setBring(val($event))" [placeholder]="P.bringHint" aria-label="Bring list" />. }
+        <select class="blank" [value]="guests()" (change)="setGuests(val($event))" aria-label="Guests">@if (d.plus_ones === 'limited' && (d.plus_max > 3 || d.plus_max === 0)) { <option [value]="d.plus_max">{{ d.plus_max }} guests</option> }<option value="none">{{ P.guests.none }}</option><option value="1">{{ P.guests.one }}</option><option value="2">{{ P.guests.two }}</option><option value="3">{{ P.guests.three }}</option><option value="unlimited">{{ P.guests.any }}</option></select>.
+        @if (has('bring')) { {{ P.bringLead }} <input class="blank wide" [readonly]="structuredBring()" [value]="bringText()" (change)="setBring(val($event))" [placeholder]="P.bringHint" aria-label="Bring list" />. }
         @if (has('cost')) { {{ P.costLead }} <input class="blank" [value]="d.cost" (input)="set({ cost: val($event) })" [placeholder]="P.costHint" aria-label="Cost" />. }
         @if (has('diet')) { {{ P.dietLead }} “<input class="blank wide" [value]="d.diet_prompt" (input)="set({ diet_prompt: val($event) })" [placeholder]="P.dietHint" aria-label="Diet question" />” }
-        @if (has('questions')) { {{ P.askLead }} “<input class="blank wide" [value]="d.questions[0]?.prompt ?? ''" (input)="question(val($event))" [placeholder]="P.askHint" aria-label="Question" />” }
+        @if (has('questions')) { {{ P.askLead }} “<input class="blank wide" [attr.aria-label]="'First question prompt'" [value]="d.questions[0]?.prompt ?? ''" (input)="question(val($event))" [placeholder]="P.askHint" aria-label="Question" />” }
         @if (has('link')) { {{ P.linkLead }} <input class="blank wide" type="url" [value]="d.link" (input)="set({ link: val($event) })" placeholder="https://…" aria-label="Link" />. }
       </p>
+      @if (d.questions.length) { <p class="small">Editing the first prompt preserves its type, choices and the other {{ d.questions.length - 1 }} question(s).</p> }
       <p class="madlib small">{{ P.particulars }}</p>
       <textarea class="blank-area" rows="4" [value]="d.about" (input)="set({ about: val($event) })" [placeholder]="P.particularsHint" aria-label="About"></textarea>
+      @if (structuredBring()) { <p class="small">This bring list uses names that need the full event editor. It is preserved here.</p> }
+      <p class="small">Bring-list claims follow existing item names when reordered. Renaming an item creates a new item.</p>
       <fieldset class="extras">
         <legend>{{ P.alsoPrint }}</legend>
         @for (m of optional; track m) { <label class="inline-check"><input type="checkbox" [checked]="has(m)" (change)="flip(m)" />{{ moduleLabel[m].toLowerCase() }}</label> }
       </fieldset>
       <label class="inline-check"><input type="checkbox" [checked]="d.draft" (change)="set({ draft: !d.draft })" [disabled]="!!editId() && !wasDraft" /> {{ P.hold }}</label>
       @if (error()) { <p class="stop">{{ error() }}</p> }
-      <button type="submit" [disabled]="busy() || (!editId() && !groups().length)">{{ editId() ? P.sendEdit : P.send }}</button>
+      <button type="submit" [disabled]="busy() || (!editId() && !group())">{{ editId() ? P.sendEdit : P.send }}</button>
     </form>
   `,
 })
@@ -77,6 +84,7 @@ export class NewEvent implements OnInit {
   readonly groups = signal<GroupView[]>([]);
   readonly homes = signal<{ id: number; name: string }[]>([]);
   readonly group = signal(0);
+  readonly timeTbd = signal(false);
   readonly draft = signal<EventDraft>(blankDraft('party', nextSaturday()));
   readonly loaded = signal(false);
   readonly busy = signal(false);
@@ -86,10 +94,10 @@ export class NewEvent implements OnInit {
   readonly kinds = Object.keys(KIND_INFO) as EventKind[];
   readonly moduleLabel = MODULE_LABEL;
   readonly optional: Module[] = ['bring', 'diet', 'rides', 'when', 'shifts', 'questions', 'cost', 'link'];
-  readonly polling = computed(() => this.draft().modules.includes('when'));
+  readonly polling = computed(() => this.draft().modules.includes('when') && !this.draft().poll_locked);
   readonly guests = computed(() => {
     const d = this.draft();
-    return d.plus_ones === 'limited' ? String(Math.min(3, d.plus_max)) : d.plus_ones;
+    return d.plus_ones === 'limited' ? String(d.plus_max) : d.plus_ones;
   });
   readonly bringText = computed(() => this.draft().bring.map((s) => (s.count > 1 ? `${s.name} x${s.count}` : s.name)).join(', '));
 
@@ -101,12 +109,13 @@ export class NewEvent implements OnInit {
         this.rev = v.event.rev;
         this.wasDraft = v.event.status === 'draft';
         this.draft.set(draftFrom(v));
+        this.timeTbd.set(!v.event.start && !v.event.modules.includes('when'));
       } else if (Number(this.startAt())) {
         this.draft.set(blankDraft('party', Number(this.startAt())));
       }
       const groups = hostable((await loadOverview(this.api)).mine);
       this.groups.set(groups);
-      this.group.set((groups.find((g) => g.slug === this.groupSlug()) ?? groups[0])?.id ?? 0);
+      this.group.set(groups.find((g) => g.slug === this.groupSlug())?.id ?? 0);
     } catch (e) {
       this.error.set(problem(e));
     } finally {
@@ -130,7 +139,10 @@ export class NewEvent implements OnInit {
   }
 
   flip(m: Module): void {
-    if (m === 'when' && !this.has('when')) return this.kind('poll');
+    if (m === 'when' && !this.has('when')) {
+      this.draft.update(d => withTimePoll(d, nextSaturday()));
+      return;
+    }
     this.set({ modules: this.has(m) ? this.draft().modules.filter((x) => x !== m) : [...this.draft().modules, m] });
   }
 
@@ -179,17 +191,14 @@ export class NewEvent implements OnInit {
   }
 
   setBring(v: string): void {
-    const old = this.draft().bring;
-    this.set({
-      bring: v.split(',').map((s) => s.trim()).filter(Boolean).map((s, i) => {
-        const m = /^(.*?)\s*x\s*(\d+)$/i.exec(s);
-        return { id: old[i]?.id ?? 0, name: (m ? m[1] : s).replace(/^(an?|some)\s+/i, ''), count: m ? Number(m[2]) : 1 };
-      }),
-    });
+    if (needsStructuredBring(this.draft().bring)) return;
+    this.set({ bring: editBringList(this.draft().bring, v) });
   }
 
+  readonly structuredBring = computed(() => needsStructuredBring(this.draft().bring));
+
   question(prompt: string): void {
-    this.set({ questions: prompt ? [{ id: this.draft().questions[0]?.id ?? 0, kind: 'yesno', prompt, choices: [] }] : [] });
+    this.set({ questions: editFirstQuestion(this.draft().questions, prompt) });
   }
 
   async send(e: Event): Promise<void> {
@@ -197,7 +206,7 @@ export class NewEvent implements OnInit {
     this.busy.set(true);
     this.error.set('');
     try {
-      const id = await saveEvent(this.api, this.draft(), this.editId() ? { id: Number(this.editId()), rev: this.rev } : { group: this.group() });
+      const id = await saveEvent(this.api, this.timeTbd() ? { ...this.draft(), start: 0, end: 0, repeat: '', modules: this.draft().modules.filter(m => m !== 'when') } : this.draft(), this.editId() ? { id: Number(this.editId()), rev: this.rev } : { group: this.group() });
       await this.router.navigate(['/e', id]);
     } catch (err) {
       this.error.set(problem(err));
@@ -262,9 +271,10 @@ export class NewGroup {
 /** Your profile, PIN, the look (theme) and the phone view. */
 @Component({
   selector: 'ch-profile',
+  imports: [RouterLink],
   template: `
     @let P = theme.t().profile;
-    <h1 class="section-head">{{ P.title }}</h1>
+    <h1 class="section-head">{{ P.title }}</h1><p><a routerLink="/me">All account settings, linked identities and calendar feed</a></p>
     @if (me(); as m) {
       <form class="slip" (submit)="save($event)">
         <p class="madlib">
@@ -273,7 +283,7 @@ export class NewGroup {
           {{ P.notifyLead }} <select class="blank" [value]="m.email_notify ? 'yes' : 'no'" (change)="change['email_notify'] = val($event) === 'yes'" aria-label="Email notifications"><option value="yes">{{ P.notify.yes }}</option><option value="no">{{ P.notify.no }}</option></select> {{ P.notifyTail }}
           {{ P.listedLead }}
           <select class="blank" [value]="m.discoverable" (change)="change['discoverable'] = val($event)" aria-label="Who can find me"><option value="public">{{ P.listed.public }}</option><option value="members">{{ P.listed.members }}</option><option value="nobody">{{ P.listed.nobody }}</option></select>.
-          {{ P.bioLead }} <input class="blank wide" maxlength="280" [value]="m.bio" (input)="change['bio'] = val($event)" [placeholder]="P.bioHint" aria-label="About me" />.
+          {{ P.bioLead }} <textarea class="blank-area" rows="8" maxlength="2400" [value]="m.bio" (input)="change['bio'] = val($event)" [placeholder]="P.bioHint" aria-label="About me"></textarea>.
         </p>
         @if (P.signOff) { <p class="sign">{{ P.signOff }} <i>{{ m.display_name }}</i>{{ m.household_name ? ', ' + m.household_name : '' }}</p> }
         <button type="submit">{{ P.send }}</button>

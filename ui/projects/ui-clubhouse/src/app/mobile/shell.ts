@@ -1,3 +1,4 @@
+import { loadFeatureStyle } from '../feature-styles';
 import { Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Api } from 'party-ng';
@@ -27,6 +28,8 @@ import { Toast } from './toast';
   `,
 })
 export class MobileShell {
+  private readonly featureStyle = loadFeatureStyle('mobile');
+
   readonly api = inject(Api);
   readonly toast = inject(Toast);
 }

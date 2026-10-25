@@ -221,7 +221,7 @@ impl App {
             created: p.created,
             has_pin: !p.pin.is_empty(),
             identities: p.identities.iter().map(|i| i.handle.clone()).collect(),
-            email_notify: !p.email.is_empty() && !p.email_off,
+            email_notify: !p.email_off,
             dm_notify: !p.identities.is_empty() && !p.dm_off,
             personal_link: match state.publish().map(|x| x.site_url.as_str()) {
                 Some(site) if !site.is_empty() && !p.personal_key.is_empty() => format!(

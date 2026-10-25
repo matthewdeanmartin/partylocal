@@ -220,9 +220,9 @@ export function fromLocalInput(value: string): number {
   return Number.isNaN(t) ? 0 : Math.round(t / 1000);
 }
 
-/** "Sat 26 Oct, 18:00–21:00" (or "18:00" with no end, "" for no time). */
+/** "Sat 26 Oct, 18:00–21:00" (or "Time not yet determined" for no time). */
 export function when(start: number, end = 0): string {
-  if (!start) return '';
+  if (!start) return 'Time not yet determined';
   const s = new Date(start * 1000);
   const day = s.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });

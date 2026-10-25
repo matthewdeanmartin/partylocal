@@ -30,15 +30,16 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body { background: var(--wall); color: var(--text); }
-party-root { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; max-width: 760px; margin: 0 auto; }
+party-root { display: block; max-width: 760px; margin: 0 auto; }
+party-chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100dvh; max-width: 760px; margin: 0 auto; }
 
-party-root > header {
+party-chat > header {
   display: flex; align-items: center; gap: 10px; padding: 10px 16px;
   background: color-mix(in srgb, var(--bot) 85%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
 }
-party-root > header .bot { font-size: 26px; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(135deg, #ffd166, #ef476f); }
-party-root > header div { display: grid; flex: 1; }
-party-root > header small { color: var(--muted); }
+party-chat > header .bot { font-size: 26px; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(135deg, #ffd166, #ef476f); }
+party-chat > header div { display: grid; flex: 1; }
+party-chat > header small { color: var(--muted); }
 .unread { border: 0; background: #ef476f; color: #fff; border-radius: 999px; padding: 4px 10px; font: inherit; cursor: pointer; }
 
 main { overflow-y: auto; padding: 16px 12px 8px; display: flex; flex-direction: column; gap: 6px; scroll-behavior: smooth; }
@@ -63,7 +64,7 @@ main { overflow-y: auto; padding: 16px 12px 8px; display: flex; flex-direction: 
 .chips button.done { background: var(--accent); color: #fff; border-color: var(--accent); }
 .chips button.soft { border-style: dashed; opacity: .8; }
 
-.card { background: var(--bot); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px #0002; width: min(440px, 80vw); margin: 0; padding: 0; }
+.card { background: var(--bot); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px #0002; width: min(440px, 80vw); max-width: 100%; margin: 0; padding: 0; }
 .card > header { display: flex; gap: 10px; align-items: center; padding: 10px 12px; color: #fff; }
 .card h3 { margin: 0; font-size: 16px; }
 .card header small { opacity: .85; }

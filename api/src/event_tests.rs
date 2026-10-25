@@ -238,6 +238,7 @@ fn the_waitlist_promotes_in_order_and_only_what_fits() {
             ..Default::default()
         },
     );
+    w.s.answer(w.org, id, w.org, &rsvp(NO), NOW).unwrap();
     let with = |plus| RsvpInput {
         plus: Some(plus),
         ..rsvp(GOING)
@@ -300,6 +301,7 @@ fn plus_one_rules_and_policy_changes() {
             ..Default::default()
         },
     );
+    w.s.answer(w.org, id, w.org, &rsvp(NO), NOW).unwrap();
     let with = |plus| RsvpInput {
         plus: Some(plus),
         ..rsvp(GOING)
@@ -822,4 +824,124 @@ fn records_from_the_sprint_2_firmware_still_load() {
     let s = State::from_parts(meta, Default::default(), Limits::board());
     assert_eq!(s.next_event, 1);
     assert_eq!(s.zone.offset(0), -5 * 3600, "US Eastern in January 1970");
+}
+
+#[test]
+fn creator_attends_and_undetermined_time_stays_upcoming() {
+    let mut w = world();
+    let id = event(
+        &mut w,
+        EventInput {
+            start: Some(0),
+            ..Default::default()
+        },
+    );
+    assert_eq!(status(&w, id, w.org), GOING);
+    assert_eq!(w.s.heads(id), 1);
+    w.s.advance_events(NOW + 30 * DAY);
+    assert_eq!(w.s.event(id).unwrap().status, "scheduled");
+    assert!(!w.s.event(id).unwrap().polling());
+    let (upcoming, _) = w.s.list_events(
+        Some(w.org),
+        Some(w.group),
+        false,
+        false,
+        NOW + 30 * DAY,
+        0,
+        50,
+    );
+    assert!(upcoming.iter().any(|e| e.id == id));
+    let (past, _) = w.s.list_events(
+        Some(w.org),
+        Some(w.group),
+        false,
+        true,
+        NOW + 30 * DAY,
+        0,
+        50,
+    );
+    assert!(!past.iter().any(|e| e.id == id));
+    w.s.update_event(
+        w.org,
+        id,
+        &EventInput {
+            start: Some(NOW + 40 * DAY),
+            ..Default::default()
+        },
+        NOW,
+    )
+    .unwrap();
+    assert_eq!(status(&w, id, w.org), GOING);
+    let draft = event(
+        &mut w,
+        EventInput {
+            status: Some("draft".into()),
+            ..Default::default()
+        },
+    );
+    assert!(w.s.rsvp(draft, w.org).is_none());
+    w.s.update_event(
+        w.org,
+        draft,
+        &EventInput {
+            status: Some("scheduled".into()),
+            ..Default::default()
+        },
+        NOW,
+    )
+    .unwrap();
+    assert_eq!(status(&w, draft, w.org), GOING);
+}
+
+#[test]
+fn series_limits_preserve_created_events_and_require_a_host() {
+    let mut w = world();
+    let sid =
+        w.s.create_series(
+            w.org,
+            w.group,
+            &SeriesInput {
+                event: Some(EventInput {
+                    title: Some("Weekly check".into()),
+                    start: Some(NOW + DAY),
+                    ..Default::default()
+                }),
+                window: Some(3),
+                ..Default::default()
+            },
+            NOW,
+        )
+        .unwrap();
+    let before = w.s.series_view(w.org, sid, NOW).unwrap().upcoming;
+    let limits = SeriesInput {
+        count: Some(1),
+        window: Some(1),
+        until: Some(NOW + DAY),
+        ..Default::default()
+    };
+    assert!(w.s.update_series(w.a, sid, &limits, NOW).is_err());
+    w.s.update_series(w.org, sid, &limits, NOW).unwrap();
+    let view = w.s.series_view(w.org, sid, NOW).unwrap();
+    assert_eq!((view.count, view.window, view.until), (1, 1, NOW + DAY));
+    assert_eq!(view.upcoming.len(), before.len());
+    w.s.end_series(w.org, sid, false, NOW).unwrap();
+    assert_eq!(w.s.series_view(w.org, sid, NOW).unwrap().upcoming.len(), 3);
+    w.s.update_series(
+        w.org,
+        sid,
+        &SeriesInput {
+            count: Some(5),
+            until: Some(0),
+            window: Some(4),
+            ..Default::default()
+        },
+        NOW,
+    )
+    .unwrap();
+    let view = w.s.series_view(w.org, sid, NOW).unwrap();
+    assert_eq!(view.status, "active");
+    assert_eq!(view.upcoming.len(), 4);
+    for e in before {
+        assert!(view.upcoming.iter().any(|next| next.id == e.id));
+    }
 }

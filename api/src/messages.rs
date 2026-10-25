@@ -538,7 +538,7 @@ message! {
         1 event: Option<EventInput>,
         /// `weekly` (every `every` weeks on the first one's weekday),
         /// `monthly-nth` (the `nth` weekday of the month; -1 = last),
-        /// `monthly-date` (the same date each month).
+        /// `monthly-date` (the same date each month), or `yearly` (February 29 uses February 28 in non-leap years).
         2 rule: Option<String>,
         3 every: Option<u32>,
         4 nth: Option<i32>,

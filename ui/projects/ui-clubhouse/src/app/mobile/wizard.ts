@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { colour, EventKind, EventView, GroupView, initials, KIND_INFO, Module, MODULE_LABEL, when } from 'party-core';
-import { Api, blankDraft, draftFrom, EventDraft, hostable, loadOverview, problem, saveEvent, withKind } from 'party-ng';
+import { Api, editFirstQuestion, blankDraft, draftFrom, EventDraft, hostable, loadOverview, problem, saveEvent, withKind } from 'party-ng';
 import { Toast } from './toast';
 
 type Step = 'group' | 'kind' | 'title' | 'when' | 'where' | 'size' | 'extras' | 'review';
@@ -13,6 +13,7 @@ type Step = 'group' | 'kind' | 'title' | 'when' | 'where' | 'size' | 'extras' | 
  */
 @Component({
   selector: 'deck-wizard',
+  imports: [RouterLink],
   template: `
     <div class="sheet page" role="dialog" aria-label="New event">
       <header>
@@ -21,6 +22,7 @@ type Step = 'group' | 'kind' | 'title' | 'when' | 'where' | 'size' | 'extras' | 
         <span class="count">{{ i() + 1 }}/{{ steps().length }}</span>
       </header>
       @let d = draft();
+      @if (editId()) { <p class="hint"><a [routerLink]="['/events', editId(), 'edit']">Open saved event in full editor</a> (save changes here before switching)</p> }
       <div class="step">
         @switch (step()) {
           @case ('group') {
@@ -42,6 +44,7 @@ type Step = 'group' | 'kind' | 'title' | 'when' | 'where' | 'size' | 'extras' | 
             <textarea class="big" rows="3" placeholder="Say a bit more (optional)" [value]="d.about" (input)="set({ about: val($event) })"></textarea>
           }
           @case ('when') {
+            <label><input type="checkbox" [checked]="timeTbd()" (change)="timeTbd.set(!timeTbd())" /> Time not yet determined</label>
             <h2>{{ polling() ? 'Which times could work?' : 'When?' }}</h2>
             <div class="days" role="listbox" aria-label="Day">
               @for (day of days; track day.getTime()) {
@@ -80,10 +83,10 @@ type Step = 'group' | 'kind' | 'title' | 'when' | 'where' | 'size' | 'extras' | 
               <button type="button" (click)="set({ capacity: d.capacity + (d.capacity >= 20 ? 5 : 1) })" aria-label="More">+</button>
             </div>
             <p class="hint">{{ d.capacity ? d.capacity + ' places, guests included; more go on a waitlist' : 'No limit' }}</p>
-            <h3>Can people bring guests?</h3>
+            <h3>Can people bring guests?</h3><p class="hint">Current allowance: {{ d.plus_ones === 'limited' ? d.plus_max + ' guests' : d.plus_ones }}.</p>
             <div class="tiles row">
               <button type="button" [class.on]="d.plus_ones === 'none'" (click)="set({ plus_ones: 'none' })">No</button>
-              <button type="button" [class.on]="d.plus_ones === 'limited'" (click)="set({ plus_ones: 'limited', plus_max: 1 })">+1</button>
+              <button type="button" [class.on]="d.plus_ones === 'limited' && d.plus_max === 1" (click)="set({ plus_ones: 'limited', plus_max: 1 })">+1</button>
               <button type="button" [class.on]="d.plus_ones === 'limited' && d.plus_max === 2" (click)="set({ plus_ones: 'limited', plus_max: 2 })">+2</button>
               <button type="button" [class.on]="d.plus_ones === 'unlimited'" (click)="set({ plus_ones: 'unlimited' })">Any</button>
             </div>
@@ -99,8 +102,8 @@ type Step = 'group' | 'kind' | 'title' | 'when' | 'where' | 'size' | 'extras' | 
               <input class="big" placeholder="Add an item, then Enter (e.g. Salad x3)" (keydown.enter)="addItem($event)" />
             }
             @if (has('questions')) {
-              <h3>A yes/no question for guests</h3>
-              <input class="big" placeholder="e.g. Can you bring a chair?" [value]="d.questions[0]?.prompt ?? ''" (input)="question(val($event))" />
+              <h3>First question for guests</h3><p class="hint">Existing question types, answer choices and additional questions are preserved.</p>
+              <input class="big" placeholder="e.g. Can you bring a chair?" [attr.aria-label]="'First question prompt'" [value]="d.questions[0]?.prompt ?? ''" (input)="question(val($event))" />
             }
             @if (has('cost')) { <input class="big" placeholder="Cost (e.g. £5 each)" [value]="d.cost" (input)="set({ cost: val($event) })" /> }
             @if (has('diet')) { <input class="big" placeholder="Diet question (e.g. Any allergies?)" [value]="d.diet_prompt" (input)="set({ diet_prompt: val($event) })" /> }
@@ -112,7 +115,7 @@ type Step = 'group' | 'kind' | 'title' | 'when' | 'where' | 'size' | 'extras' | 
               <div class="hero"><span class="emoji">{{ info[d.kind].icon }}</span><span class="tag">{{ groupName() }}</span></div>
               <div class="info">
                 <h2>{{ d.title || 'Untitled' }}</h2>
-                <p class="when">{{ polling() ? d.when.length + ' times to vote on' : when(d.start, d.end) }}{{ d.repeat ? ' · repeats' : '' }}</p>
+                <p class="when">{{ timeTbd() ? 'Time not yet determined' : polling() ? d.when.length + ' times to vote on' : when(d.start, d.end) }}{{ !timeTbd() && d.repeat ? ' · repeats' : '' }}</p>
                 <p class="where">📍 {{ d.place || (d.where_kind === 'tbd' ? 'Place TBD' : '') }}</p>
                 <p class="who">{{ d.capacity ? d.capacity + ' places' : 'No limit' }}</p>
               </div>
@@ -138,6 +141,7 @@ export class Wizard implements OnInit {
   private readonly toast = inject(Toast);
   readonly groups = signal<GroupView[]>([]);
   readonly group = signal(0);
+  readonly timeTbd = signal(false);
   readonly draft = signal<EventDraft>(blankDraft('generic'));
   readonly i = signal(0);
   readonly busy = signal(false);
@@ -152,7 +156,7 @@ export class Wizard implements OnInit {
   readonly optional: Module[] = ['bring', 'diet', 'rides', 'when', 'shifts', 'questions', 'cost', 'link'];
   readonly hours = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
   readonly lengths = [{ v: 1, l: '1 h' }, { v: 2, l: '2 h' }, { v: 3, l: '3 h' }, { v: 5, l: '5 h' }, { v: 0, l: 'open end' }];
-  readonly repeats = [{ v: '' as const, l: 'Once' }, { v: 'weekly' as const, l: 'Weekly' }, { v: 'monthly-nth' as const, l: 'Monthly' }];
+  readonly repeats = [{ v: '' as const, l: 'Once' }, { v: 'weekly' as const, l: 'Weekly' }, { v: 'monthly-nth' as const, l: 'Monthly' }, { v: 'yearly' as const, l: 'Yearly (Feb 29 → Feb 28)' }];
   readonly wheres = [{ v: 'place' as const, l: '📍 A place' }, { v: 'tbd' as const, l: '🤷 Decide later' }];
   readonly days = Array.from({ length: 21 }, (_, n) => {
     const d = new Date();
@@ -164,7 +168,7 @@ export class Wizard implements OnInit {
   readonly initials = initials;
   readonly Math = Math;
 
-  readonly polling = computed(() => this.draft().modules.includes('when'));
+  readonly polling = computed(() => this.draft().modules.includes('when') && !this.draft().poll_locked);
   readonly steps = computed<Step[]>(() =>
     this.editId() ? ['title', 'when', 'where', 'size', 'extras', 'review'] : ['group', 'kind', 'title', 'when', 'where', 'size', 'extras', 'review'],
   );
@@ -173,7 +177,7 @@ export class Wizard implements OnInit {
   readonly ready = computed(() => {
     const d = this.draft();
     if (this.step() === 'title') return !!d.title.trim();
-    if (this.step() === 'when') return this.polling() ? d.when.length >= 2 : !!d.start;
+    if (this.step() === 'when') return this.timeTbd() || (this.polling() ? d.when.length >= 2 : !!d.start);
     return true;
   });
 
@@ -183,6 +187,7 @@ export class Wizard implements OnInit {
       this.rev = v.event.rev;
       this.group.set(v.event.group);
       this.draft.set(draftFrom(v));
+      this.timeTbd.set(!v.event.start && !v.event.modules.includes('when'));
       if (v.event.start) {
         const s = new Date(v.event.start * 1000);
         this.day.set(new Date(s.getFullYear(), s.getMonth(), s.getDate()));
@@ -215,6 +220,7 @@ export class Wizard implements OnInit {
   }
 
   flip(m: Module): void {
+    if (m === 'when') this.set({ poll_locked: false });
     this.set({ modules: this.has(m) ? this.draft().modules.filter((x) => x !== m) : [...this.draft().modules, m] });
   }
 
@@ -265,7 +271,7 @@ export class Wizard implements OnInit {
   }
 
   question(prompt: string): void {
-    this.set({ questions: prompt ? [{ id: this.draft().questions[0]?.id ?? 0, kind: 'yesno', prompt, choices: [] }] : [] });
+    this.set({ questions: editFirstQuestion(this.draft().questions, prompt) });
   }
 
   sameDay(d: Date): boolean {
@@ -292,7 +298,7 @@ export class Wizard implements OnInit {
     this.busy.set(true);
     this.error.set('');
     try {
-      const id = await saveEvent(this.api, this.draft(), this.editId() ? { id: Number(this.editId()), rev: this.rev } : { group: this.group() });
+      const id = await saveEvent(this.api, this.timeTbd() ? { ...this.draft(), start: 0, end: 0, repeat: '', modules: this.draft().modules.filter(m => m !== 'when') } : this.draft(), this.editId() ? { id: Number(this.editId()), rev: this.rev } : { group: this.group() });
       this.toast.say(this.editId() ? 'Saved' : 'Published 🎉');
       await this.router.navigate(['/m/e', id], { replaceUrl: true });
     } catch (e) {

@@ -1,6 +1,5 @@
 import { Component, inject } from '@angular/core';
 import { NavigationStart, Router, RouterOutlet } from '@angular/router';
-import { Theme } from './theme';
 import { View } from './view';
 
 /**
@@ -13,7 +12,6 @@ import { View } from './view';
   template: `<router-outlet />`,
 })
 export class App {
-  private readonly theme = inject(Theme);
   private readonly view = inject(View);
   private readonly router = inject(Router);
 

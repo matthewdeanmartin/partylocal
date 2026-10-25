@@ -4,7 +4,6 @@ import { CanActivateFn, provideRouter, Router, Routes, withComponentInputBinding
 import { startDemo } from 'party-demo';
 import { Api } from 'party-ng';
 import { App } from './app/app';
-import { Deck } from './app/deck';
 import { SignIn } from './app/signin';
 
 async function ready(api: Api): Promise<void> {
@@ -27,7 +26,26 @@ const signedOut: CanActivateFn = async () => {
 
 // The deck and sign-in load at once; the other screens on first visit.
 const routes: Routes = [
-  { path: '', component: Deck, canActivate: [signedIn], title: 'party' },
+  { path: 'manage/events/:id', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/event').then(m => m.EventPage) },
+  { path: 'signin/finishing', loadComponent: () => import('../../local/src/app/pages/auth').then(m => m.Finishing) },
+  { path: 'signin', loadComponent: () => import('../../local/src/app/pages/auth').then(m => m.SignIn) },
+  { path: 'signup', loadComponent: () => import('../../local/src/app/pages/auth').then(m => m.SignUp) },
+  { path: 'invite/:token', loadComponent: () => import('../../local/src/app/pages/invite').then(m => m.Invite) },
+
+  { path: 'groups/:slug/bulk', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/bulk').then(m => m.BulkEvents) },
+  { path: 'account', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/me').then(m => m.Profile) },
+  { path: 'admin/channels', canActivate: [async () => { const api = inject(Api); if (!api.ready()) await api.refresh(); return api.me()?.role === 'admin'; }], loadComponent: () => import('../../local/src/app/pages/channels').then(m => m.Channels) },
+  { path: 'admin', canActivate: [async () => { const api = inject(Api); if (!api.ready()) await api.refresh(); return api.me()?.role === 'admin'; }], loadComponent: () => import('../../local/src/app/pages/admin').then(m => m.Admin) },
+  { path: 'people/:id', data: { prefix: '' }, canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/mobile/social').then(m => m.MobilePerson) },
+  { path: 'groups/:slug/members/:id', data: { prefix: '' }, canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/mobile/social').then(m => m.MobilePerson) },
+  { path: 'manage/groups/:ref', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/group').then(m => m.Group) },
+  { path: 'groups/:ref/edit', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/group-form').then(m => m.GroupForm) },
+  { path: 'groups/:slug/invite', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/community').then(m => m.GroupInvite) },
+  { path: 'groups/:ref/events/new', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/event-form').then(m => m.EventForm) },
+  { path: 'series/:id', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/series').then(m => m.SeriesSettings) },
+  { path: 'events/:id/edit', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/event-form').then(m => m.EventForm) },
+  { path: 'events/:id', redirectTo: 'e/:id' },
+  { path: '', loadComponent: () => import('./app/deck').then(m => m.Deck), canActivate: [signedIn], title: 'party' },
   { path: 'signin', component: SignIn, canActivate: [signedOut], title: 'Sign in · party' },
   { path: 'plans', loadComponent: () => import('./app/pages').then((m) => m.Plans), canActivate: [signedIn], title: 'Plans · party' },
   { path: 'groups', loadComponent: () => import('./app/pages').then((m) => m.Groups), canActivate: [signedIn], title: 'Groups · party' },

@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { colour, initials, PersonList, PersonView } from 'party-core';
 import { Api, problem } from '../api';
 import { value } from './auth';
@@ -6,6 +7,7 @@ import { value } from './auth';
 /** People I may find: those who share a group with me, or chose "public". */
 @Component({
   selector: 'party-people',
+  imports: [RouterLink],
   template: `
     <h1>People</h1>
     <form class="card" role="search" (submit)="search($event)">
@@ -18,7 +20,7 @@ import { value } from './auth';
         @for (p of people(); track p.id) {
           <li>
             <span class="avatar" [style.background]="colour(p.id)" aria-hidden="true">{{ initials(p.display_name) }}</span>
-            <span><strong>{{ p.display_name }}</strong>
+            <span><a [routerLink]="['/people', p.id]"><strong>{{ p.display_name }}</strong></a>
               @if (p.household_name) { <small>{{ p.household_name }}</small> }
               @if (p.bio) { <br /><span class="aside">{{ p.bio }}</span> }</span>
           </li>

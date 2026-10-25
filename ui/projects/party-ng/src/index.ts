@@ -2,4 +2,7 @@
 // app and the alternative UIs). Consumed through a tsconfig path.
 export * from './api';
 export * from './flows';
+export * from './event-editing';
 export * from './when';
+
+export * from "./social";

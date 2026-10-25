@@ -26,6 +26,31 @@ const signedOut: CanActivateFn = async () => {
 
 // The front page and sections load at once; the article and the desks are lazy.
 const routes: Routes = [
+  { path: 'me', redirectTo: 'account' },
+  { path: 'signin/finishing', loadComponent: () => import('../../local/src/app/pages/auth').then(m => m.Finishing) },
+  { path: 'signin', loadComponent: () => import('../../local/src/app/pages/auth').then(m => m.SignIn) },
+  { path: 'signup', loadComponent: () => import('../../local/src/app/pages/auth').then(m => m.SignUp) },
+  { path: 'invite/:token', loadComponent: () => import('../../local/src/app/pages/invite').then(m => m.Invite) },
+  { path: 'groups', pathMatch: 'full', redirectTo: 'societies' },
+  { path: 'groups/new', redirectTo: 'societies/found' },
+
+  { path: 'account', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/me').then(m => m.Profile) },
+  { path: 'admin/channels', canActivate: [async () => { const api = inject(Api); if (!api.ready()) await api.refresh(); return api.me()?.role === 'admin'; }], loadComponent: () => import('../../local/src/app/pages/channels').then(m => m.Channels) },
+  { path: 'admin', canActivate: [async () => { const api = inject(Api); if (!api.ready()) await api.refresh(); return api.me()?.role === 'admin'; }], loadComponent: () => import('../../local/src/app/pages/admin').then(m => m.Admin) },
+
+  { path: 'manage/events/:id', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/event').then(m => m.EventPage) },
+  { path: 'manage/groups/:ref', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/group').then(m => m.Group) },
+  { path: 'groups/:ref/edit', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/group-form').then(m => m.GroupForm) },
+  { path: 'groups/:ref/events/new', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/event-form').then(m => m.EventForm) },
+  { path: 'series/:id', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/series').then(m => m.SeriesSettings) },
+  { path: 'events/:id/edit', canActivate: [signedIn], loadComponent: () => import('../../local/src/app/pages/event-form').then(m => m.EventForm) },
+  { path: 'events/:id', redirectTo: 'e/:id' },
+  { path: 'people', component: WhosWho, canActivate: [signedIn] },
+  { path: 'people/:id', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/community').then(x => x.Person) },
+  { path: 'groups/:slug/invite', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/community').then(x => x.GroupInvite) },
+  { path: 'groups/:slug/members/:id', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/community').then(x => x.Person) },
+  { path: 'groups/:slug/bulk', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/bulk').then(x => x.BulkEvents) },
+  { path: 'groups/:slug', redirectTo: 'societies/:slug' },
   { path: '', component: Front, canActivate: [signedIn], title: 'The Party Gazette' },
   { path: 'subscribe', canActivate: [signedOut], loadComponent: () => import('./app/press').then((m) => m.Subscribe), title: 'Subscribe · The Party Gazette' },
   { path: 'diary', component: Diary, canActivate: [signedIn], title: 'Your Diary · The Party Gazette' },

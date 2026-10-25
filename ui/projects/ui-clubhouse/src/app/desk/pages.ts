@@ -2,7 +2,6 @@ import { Component, computed, inject, input, OnInit, signal } from '@angular/cor
 import { RouterLink } from '@angular/router';
 import { count, EventSummary, EventView, GroupView, JOIN_LABEL, KIND_INFO, NOTICE_TEXT, NoticeView, PersonView, ROLE_LABEL, STATUS_LABEL, when } from 'party-core';
 import { Api, GroupPage, joinGroup, leaveGroup, loadGroup, loadNotices, loadOverview, loadPeople, markRead, Overview, problem, relative } from 'party-ng';
-import { InvitePanel } from '../../../../local/src/app/invite-panel';
 import { Theme } from '../theme';
 
 const kindLabel = (k: string) => KIND_INFO[k as keyof typeof KIND_INFO]?.label ?? 'Event';
@@ -90,7 +89,7 @@ export class Home implements OnInit {
     const e = v.event;
     const L = this.theme.t();
     const at = e.where_kind === 'tbd' ? L.facts.tbd : e.place || L.facts.home;
-    return e.start ? `${when(e.start, e.end)} · ${at}` : `${L.dateByVote} · ${at}`;
+    return e.start ? `${when(e.start, e.end)} · ${at}` : `${e.modules.includes('when') ? L.dateByVote : 'Time not yet determined'} · ${at}`;
   }
 }
 
@@ -185,7 +184,7 @@ export class Groups implements OnInit {
 /** One group: what it is, what's coming, who's in it. */
 @Component({
   selector: 'ch-group',
-  imports: [RouterLink, InvitePanel],
+  imports: [RouterLink],
   template: `
     @let L = theme.t();
     @if (page(); as p) {
@@ -198,7 +197,7 @@ export class Groups implements OnInit {
         @if (!g.my_status && g.join !== 'invite') { <button type="button" (click)="act('join')">{{ L.join(g.join === 'open') }}</button> }
         @if (g.my_status === 'requested') { <span>{{ L.applying }}</span><button type="button" class="quiet" (click)="act('leave')">{{ L.withdraw }}</button> }
         @if (g.my_status === 'active') { <button type="button" class="quiet" (click)="act('leave')">{{ L.leave }}</button> }
-        @if (g.can_create_events) { <a class="button" routerLink="/new" [queryParams]="{ group: g.slug }">{{ L.host }}</a> }
+        @if (g.can_create_events) { <a class="button" routerLink="/new" [queryParams]="{ group: g.slug }">{{ L.host }}</a> <a class="button" [routerLink]="['/groups', g.slug, 'bulk']">Bulk add events</a> }
       </div>
       @if (error()) { <p class="stop">{{ error() }}</p> }
       <div class="spread">
@@ -214,14 +213,13 @@ export class Groups implements OnInit {
         <aside class="sidebar">
           <h2 class="rule">{{ L.roll }}</h2>
           @for (m of p.members; track m.person) {
-            <p class="small"><span class="smallcaps">{{ m.display_name }}</span>, {{ m.status === 'requested' ? L.applicant : role(m.role) }}
+            <p class="small"><a class="smallcaps" [routerLink]="['/groups', g.slug, 'members', m.person]">{{ m.display_name }}</a>, {{ m.status === 'requested' ? L.applicant : role(m.role) }}
               @if (g.can_manage && m.status === 'requested') { <button type="button" class="tiny" (click)="admit(m.person)">{{ L.admit }}</button> }</p>
           } @empty { <p class="small">{{ L.rollPrivate }}</p> }
         </aside>
       </div>
       @if (g.can_manage) {
-        <h2 class="rule">{{ L.invite }}</h2>
-        <div class="classic"><party-invite-panel kind="group" [target]="g.id" /></div>
+        <p><a class="button" [routerLink]="['/groups', g.slug, 'invite']">{{ L.invite }}</a> <a [routerLink]="['/manage/groups', g.slug]">Group settings and organizer tools</a></p>
       }
       <div>
       </div>
@@ -314,13 +312,14 @@ export class Notices implements OnInit {
 /** People you can find. */
 @Component({
   selector: 'ch-people',
+  imports: [RouterLink],
   template: `
     @let L = theme.t();
     <h1 class="section-head">{{ L.peopleTitle }}</h1>
     <p class="standfirst">{{ L.peopleLede }} <input id="people-search" type="search" class="blank" [placeholder]="L.peopleSearch" (input)="search($any($event.target).value)" [attr.aria-label]="L.peopleSearch" /></p>
     <div class="columns directory">
       @for (p of people(); track p.id) {
-        <p class="entry"><span class="smallcaps">{{ p.display_name }}</span>@if (p.household_name) { , {{ L.of }} {{ p.household_name }} }. {{ p.bio }}</p>
+        <p class="entry"><a class="smallcaps" [routerLink]="['/people', p.id]">{{ p.display_name }}</a>@if (p.household_name) { , {{ L.of }} {{ p.household_name }} }. {{ p.bio }}</p>
       } @empty { <p>{{ L.nobody }}</p> }
     </div>
   `,

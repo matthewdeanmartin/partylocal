@@ -1,3 +1,4 @@
+import { loadFeatureStyle } from '../feature-styles';
 import { Component, computed, effect, HostListener, inject, input, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { colour, EventView, TimeOption } from 'party-core';
@@ -45,6 +46,8 @@ import { Cal, secs } from './cal-state';
   `,
 })
 export class Calendar implements OnInit {
+  private readonly featureStyle = loadFeatureStyle('calendar');
+
   readonly v = input('');
   readonly d = input('');
   readonly theme = inject(Theme);

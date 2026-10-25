@@ -1,7 +1,7 @@
 // Forms as text: a buffer of `key: value  # comment` lines that the person
 // edits and saves with ^O. Pure functions; unit-tested in console-buffer.test.ts.
 import { blankAnswer, EventKind, EventView, guestLimit, KIND_INFO, Me, Module, RsvpInput } from 'party-core';
-import { EventDraft, parseWhen } from 'party-ng';
+import { editBringList, keepItemIds, EventDraft, parseWhen } from 'party-ng';
 
 export interface Parsed {
   values: Map<string, { value: string; line: number }>;
@@ -75,13 +75,13 @@ export function eventBuffer(d: EventDraft, heading: string, creating: boolean): 
     '# ^O saves, ^X closes. Lines starting with # are notes.',
     ...(creating ? [`kind: ${d.kind}`.padEnd(32) + `# ${KINDS.join(' ')}`] : []),
     `title: ${d.title}`,
-    ...(d.modules.includes('when') ? [] : [`start: ${stamp(d.start)}`, `end: ${stamp(d.end)}`.padEnd(32) + '# blank = no set end']),
+    ...(d.modules.includes('when') && !d.poll_locked ? [] : [`start: ${stamp(d.start)}`, `end: ${stamp(d.end)}`.padEnd(32) + '# blank = no set end']),
     `where: ${d.where_kind}`.padEnd(32) + '# place | home | tbd',
     `place: ${d.place}`,
     `address: ${d.address}`,
     `capacity: ${d.capacity}`.padEnd(32) + '# 0 = no limit',
     `guests: ${d.plus_ones === 'limited' ? `limited ${d.plus_max}` : d.plus_ones}`.padEnd(32) + '# none | limited N | unlimited',
-    ...(creating && !d.modules.includes('when') ? [`repeat: ${d.repeat || 'once'}`.padEnd(32) + '# once | weekly | monthly-nth | monthly-date'] : []),
+    ...(creating && !d.modules.includes('when') ? [`repeat: ${d.repeat || 'once'}`.padEnd(32) + '# once | weekly | monthly-nth | monthly-date | yearly (Feb 29 → Feb 28)'] : []),
     `draft: ${d.draft ? 'yes' : 'no'}`,
     `extras: ${extras.join(', ')}`.padEnd(32) + '# bring diet rides when shifts questions cost link',
     `bring: ${d.bring.map((s) => `${s.name} x${s.count}`).join(', ')}`,
@@ -102,7 +102,13 @@ export function eventBuffer(d: EventDraft, heading: string, creating: boolean): 
 export function readEvent(text: string, base: EventDraft): { draft: EventDraft; errors: Parsed['errors'] } {
   const { values, errors } = parseBuffer(text);
   const d: EventDraft = structuredClone(base);
-  const get = (k: string) => values.get(k);
+  // A displayed timestamp or short list can be less precise than stored data.
+  // Parse only changed fields so title-only edits preserve every other value.
+  const original = parseBuffer(eventBuffer(base, '', true)).values;
+  const get = (k: string) => {
+    const entry = values.get(k);
+    return entry && entry.value !== original.get(k)?.value ? entry : undefined;
+  };
   const line = (k: string) => get(k)?.line ?? 0;
   const v = (k: string) => get(k)?.value ?? '';
   if (get('kind')) {
@@ -147,16 +153,11 @@ export function readEvent(text: string, base: EventDraft): { draft: EventDraft; 
   }
   if (get('repeat')) {
     const r = v('repeat') === 'once' ? '' : v('repeat');
-    if (!['', 'weekly', 'monthly-nth', 'monthly-date'].includes(r)) errors.push({ line: line('repeat'), message: 'repeat: once, weekly, monthly-nth or monthly-date' });
+    if (!['', 'weekly', 'monthly-nth', 'monthly-date', 'yearly'].includes(r)) errors.push({ line: line('repeat'), message: 'repeat: once, weekly, monthly-nth, monthly-date or yearly' });
     else d.repeat = r as EventDraft['repeat'];
   }
   if (get('draft')) d.draft = /^(yes|y|true|1)$/i.test(v('draft'));
-  if (get('bring')) {
-    d.bring = v('bring').split(',').map((s) => s.trim()).filter(Boolean).map((s, i) => {
-      const m = /^(.*?)\s*x(\d+)$/i.exec(s);
-      return { id: base.bring[i]?.id ?? 0, name: m ? m[1] : s, count: m ? Number(m[2]) : 1 };
-    });
-  }
+  if (get('bring')) d.bring = editBringList(base.bring, v('bring'));
   if (get('diet_prompt')) d.diet_prompt = v('diet_prompt');
   if (get('questions')) {
     d.questions = v('questions').split('|').map((s) => s.trim()).filter(Boolean).map((s, i) => {
@@ -167,14 +168,14 @@ export function readEvent(text: string, base: EventDraft): { draft: EventDraft; 
       }
       if (m[1] === 'choice') {
         const [prompt, choices] = m[2].split(/:(.*)/s);
-        return { id: base.questions[i]?.id ?? 0, kind: 'choice' as const, prompt: prompt.trim(), choices: (choices ?? '').split(',').map((c) => c.trim()).filter(Boolean) };
+        return { id: 0, kind: 'choice' as const, prompt: prompt.trim(), choices: (choices ?? '').split(',').map((c) => c.trim()).filter(Boolean) };
       }
-      return { id: base.questions[i]?.id ?? 0, kind: m[1] as 'yesno' | 'text', prompt: m[2].trim(), choices: [] };
+      return { id: 0, kind: m[1] as 'yesno' | 'text', prompt: m[2].trim(), choices: [] };
     });
   }
   if (get('when')) {
     d.when = v('when').split('|').map((s) => s.trim()).filter(Boolean)
-      .map((s, i) => ({ id: base.when[i]?.id ?? 0, ...(readSpan(s, line('when'), errors) ?? { start: 0, end: 0 }) }));
+      .map((s, i) => ({ id: 0, ...(readSpan(s, line('when'), errors) ?? { start: 0, end: 0 }) }));
   }
   if (get('shifts')) {
     d.shifts = v('shifts').split('|').map((s) => s.trim()).filter(Boolean).map((s, i) => {
@@ -184,9 +185,14 @@ export function readEvent(text: string, base: EventDraft): { draft: EventDraft; 
         return { id: 0, name: s, start: 0, end: 0, count: 1 };
       }
       const t = readSpan(m[2], line('shifts'), errors) ?? { start: 0, end: 0 };
-      return { id: base.shifts[i]?.id ?? 0, name: m[1], ...t, count: Number(m[3] ?? 1) };
+      return { id: 0, name: m[1], ...t, count: Number(m[3] ?? 1) };
     });
   }
+  if (get('questions')) d.questions = keepItemIds(base.questions, d.questions,
+    (a, b) => a.kind === b.kind && a.prompt === b.prompt && JSON.stringify(a.choices) === JSON.stringify(b.choices));
+  if (get('when')) d.when = keepItemIds(base.when, d.when, (a, b) => a.start === b.start && a.end === b.end);
+  if (get('shifts')) d.shifts = keepItemIds(base.shifts, d.shifts,
+    (a, b) => a.name === b.name && a.start === b.start && a.end === b.end);
   for (const k of ['cost', 'rides_note', 'link', 'about'] as const) if (get(k)) d[k] = v(k);
   return { draft: d, errors };
 }

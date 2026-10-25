@@ -119,7 +119,7 @@ impl State {
             .events
             .iter()
             .filter(|e| self.event_access(None, e).see)
-            .filter(|e| e.polling() || (e.start < now + AHEAD && e.effective_end() + BEHIND > now))
+            .filter(|e| e.start == 0 || (e.start < now + AHEAD && e.effective_end() + BEHIND > now))
             .map(|e| PublicEvent {
                 id: e.id,
                 group: e.group,
@@ -174,7 +174,7 @@ impl State {
             let list: Vec<&crate::messages::StoredEvent> = self
                 .events
                 .iter()
-                .filter(|e| e.group == g.id && e.status != "draft" && !e.polling())
+                .filter(|e| e.group == g.id && e.status != "draft" && e.start != 0)
                 .filter(|e| self.event_access(None, e).see)
                 .collect();
             files.push(File {

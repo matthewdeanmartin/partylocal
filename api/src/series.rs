@@ -37,6 +37,14 @@ pub fn occurrence(s: &StoredSeries, zone: &Zone, n: u32) -> Option<u64> {
     let time = first.time();
     let n64 = i64::from(n);
     let days = match s.rule.as_str() {
+        "yearly" => {
+            let year = first.year + n64;
+            crate::tz::days_from_civil(
+                year,
+                first.month,
+                first.day.min(days_in_month(year, first.month)),
+            )
+        }
         "weekly" => first.days() + 7 * i64::from(s.every.max(1)) * n64,
         "monthly-nth" | "monthly-date" => {
             let month = first.year * 12 + i64::from(first.month) - 1 + n64;
@@ -59,6 +67,10 @@ pub fn describe(s: &StoredSeries, zone: &Zone) -> String {
     let at = format!("at {:02}:{:02}", l.hour, l.minute);
     let day = WEEKDAYS[l.weekday as usize];
     match s.rule.as_str() {
+        "yearly" => format!(
+            "Every year on {:02}-{:02} {at} (February 29 uses February 28 in non-leap years)",
+            l.month, l.day
+        ),
         "weekly" if s.every <= 1 => format!("Every {day} {at}"),
         "weekly" => format!("Every {} weeks on {day} {at}", s.every),
         "monthly-nth" => {
@@ -96,9 +108,9 @@ impl State {
         window: u32,
         count: u32,
     ) -> Result<(), ApiError> {
-        if !["weekly", "monthly-nth", "monthly-date"].contains(&rule) {
+        if !["weekly", "monthly-nth", "monthly-date", "yearly"].contains(&rule) {
             return Err(ApiError::bad_request(
-                "Repeat weekly, monthly-nth or monthly-date",
+                "Repeat weekly, monthly-nth, monthly-date or yearly",
             ));
         }
         if rule == "weekly" && !(1..=4).contains(&every) {
@@ -255,7 +267,9 @@ impl State {
                 rsvp_by,
                 ..template
             };
+            let creator = e.created_by;
             self.events.push(e);
+            self.set_going(event_id, creator, now);
             for person in regulars {
                 if self.eligible(person, self.event(event_id).expect("just made")) {
                     self.set_going(event_id, person, now);
@@ -542,6 +556,25 @@ mod tests {
 
     fn at(zone: &Zone, y: i64, m: u32, d: u32, h: i64) -> u64 {
         zone.to_utc(days_from_civil(y, m, d), h * 3600)
+    }
+
+    #[test]
+    fn yearly_birthdays_keep_date_and_restore_leap_day() {
+        let z = Zone::parse(DEFAULT).unwrap();
+        let birthday = series("yearly", at(&z, 2027, 6, 12, 19));
+        assert_eq!(occurrence(&birthday, &z, 1), Some(at(&z, 2028, 6, 12, 19)));
+        let leap = series("yearly", at(&z, 2028, 2, 29, 12));
+        assert_eq!(occurrence(&leap, &z, 1), Some(at(&z, 2029, 2, 28, 12)));
+        assert_eq!(occurrence(&leap, &z, 4), Some(at(&z, 2032, 2, 29, 12)));
+        assert_eq!(occurrence(&leap, &z, 72), Some(at(&z, 2100, 2, 28, 12)));
+        assert!(describe(&leap, &z).contains("Every year on 02-29"));
+        let mut limited = leap;
+        limited.count = 2;
+        assert!(occurrence(&limited, &z, 2).is_none());
+        limited.count = 0;
+        limited.until = at(&z, 2029, 2, 27, 12);
+        assert!(occurrence(&limited, &z, 1).is_none());
+        assert!(State::check_rule("yearly", 1, 1, 1, 0).is_ok());
     }
 
     #[test]

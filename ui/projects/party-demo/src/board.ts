@@ -284,7 +284,7 @@ export class Board {
       id: p.id, display_name: p.display_name, email: p.email, role: p.admin ? 'admin' : 'member', bio: p.bio,
       household: p.household, household_name: this.householdName(p.household), discoverable: p.discoverable,
       sessions: this.state.session === id ? 1 : 0, created: p.created, has_pin: !!p.pin, identities: [...p.identities],
-      email_notify: !!p.email && !p.email_off, dm_notify: p.identities.length > 0 && !p.dm_off, personal_link: '',
+      email_notify: !p.email_off, dm_notify: p.identities.length > 0 && !p.dm_off, personal_link: '',
     };
   }
 
@@ -589,8 +589,8 @@ export class Board {
     }
     if (this.polling(e)) {
       if (e.when.length < 2) throw bad('A time poll needs at least 2 times');
-    } else if (!e.start) {
-      throw bad('An event needs a start time');
+    } else if (!e.start && e.end) {
+      throw bad('Set a start time before an end time');
     }
     if (e.end && e.end < e.start) throw bad('The end is before the start');
     if (e.visibility === 'public' && this.group(e.group)?.visibility !== 'public') throw bad('Only events of public groups can be public');
@@ -621,9 +621,10 @@ export class Board {
     const no = this.canCreateEvent(actor, g);
     if (no) throw no;
     const e = this.buildEvent(actor, g.id, input);
-    if (e.status === 'scheduled' && !this.polling(e) && e.start <= this.now) throw bad('Pick a time in the future');
+    if (e.status === 'scheduled' && e.start !== 0 && e.start <= this.now) throw bad('Pick a time in the future');
     e.id = this.state.next.event++;
     this.state.events.push(e);
+    if (e.status === 'scheduled') this.setGoing(e.id, actor);
     if (e.status === 'scheduled') for (const p of e.invitees) this.notify(p, 'invited', e.id, actor);
     this.log(actor, 'event.create', `event ${e.id} in group ${g.id}`);
     return e;
@@ -643,6 +644,7 @@ export class Board {
     next.updated = this.now;
     Object.assign(e, next);
     if (e.status === 'scheduled') {
+      if (wasDraft) this.setGoing(id, e.created_by);
       for (const p of fresh) this.notify(p, 'invited', id, actor);
       if (affects && !wasDraft) for (const p of this.engaged(id)) this.notify(p, 'changed', id, actor);
     }
@@ -739,7 +741,7 @@ export class Board {
     const past = !!q.get('past') && q.get('past') !== '0';
     const found = this.state.events
       .filter((e) => !group || e.group === group)
-      .filter((e) => (this.active(e) && (this.polling(e) || this.end(e) > this.now)) !== past)
+      .filter((e) => (this.active(e) && (!e.start || this.end(e) > this.now)) !== past)
       .filter((e) => this.eventAccess(viewer, e).see)
       .filter((e) => !mine || e.hosts.includes(viewer) || e.invitees.includes(viewer) || (this.rsvp(e.id, viewer)?.status ?? 'no') !== 'no')
       .sort((a, b) => (past ? b.start - a.start : a.start - b.start) || a.id - b.id);
@@ -921,16 +923,18 @@ export class Board {
   /** Start of occurrence `n` (0-based) after `first`, in the browser's zone. */
   private occurrence(s: DemoSeries, first: number, n: number): number {
     const d = new Date(first * 1000);
-    if (s.rule === 'weekly') d.setDate(d.getDate() + 7 * s.every * n);
-    else if (s.rule === 'monthly-date') d.setMonth(d.getMonth() + n);
+    if (s.rule === 'yearly') { const month = d.getMonth(), day = d.getDate(); d.setDate(1); d.setFullYear(d.getFullYear() + n); d.setMonth(month); const end = new Date(d); end.setMonth(month + 1, 0); d.setDate(Math.min(day, end.getDate())); }
+    else if (s.rule === 'weekly') d.setDate(d.getDate() + 7 * s.every * n);
+    else if (s.rule === 'monthly-date') { const day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); const end = new Date(d); end.setMonth(end.getMonth() + 1, 0); d.setDate(Math.min(day, end.getDate())); }
     else {
-      const nth = Math.ceil(d.getDate() / 7);
+      const nth = s.nth || (d.getDate() > 28 ? -1 : Math.ceil(d.getDate() / 7));
       const weekday = d.getDay();
       const m = new Date(d);
       m.setDate(1);
       m.setMonth(m.getMonth() + n);
       const offset = (weekday - m.getDay() + 7) % 7;
-      m.setDate(1 + offset + 7 * (nth - 1));
+      if (nth === -1) { m.setMonth(m.getMonth() + 1, 0); m.setDate(m.getDate() - (m.getDay() - weekday + 7) % 7); }
+      else m.setDate(1 + offset + 7 * (nth - 1));
       return Math.floor(m.getTime() / 1000);
     }
     return Math.floor(d.getTime() / 1000);
@@ -940,6 +944,7 @@ export class Board {
     const d = new Date(first * 1000);
     const day = d.toLocaleDateString(undefined, { weekday: 'long' });
     const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    if (s.rule === 'yearly') return `Every year on ${d.getMonth() + 1}/${d.getDate()} at ${time} (Feb 29 uses Feb 28 in non-leap years)`;
     if (s.rule === 'weekly') return s.every === 1 ? `Every ${day} at ${time}` : `Every ${s.every} weeks on ${day} at ${time}`;
     if (s.rule === 'monthly-date') return `Monthly on the ${d.getDate()}${['th', 'st', 'nd', 'rd'][d.getDate() % 10 > 3 || [11, 12, 13].includes(d.getDate()) ? 0 : d.getDate() % 10]} at ${time}`;
     return `The ${['first', 'second', 'third', 'fourth', 'fifth'][Math.ceil(d.getDate() / 7) - 1]} ${day} of each month at ${time}`;
@@ -949,8 +954,8 @@ export class Board {
     const no = this.canCreateEvent(actor, g);
     if (no) throw no;
     const s: DemoSeries = {
-      id: this.state.next.series++, group: g.id, rule: pick(input['rule'] ?? 'weekly', ['weekly', 'monthly-nth', 'monthly-date'], 'rule'),
-      every: Math.min(4, Math.max(1, Number(input['every']) || 1)), nth: 0, until: Number(input['until']) || 0,
+      id: this.state.next.series++, group: g.id, rule: pick(input['rule'] ?? 'weekly', ['weekly', 'monthly-nth', 'monthly-date', 'yearly'], 'rule'),
+      every: Math.min(4, Math.max(1, Number(input['every']) || 1)), nth: Number(input['nth']) || 0, until: Number(input['until']) || 0,
       count: Number(input['count']) || 0, window: Math.min(8, Math.max(1, Number(input['window']) || 3)), status: 'active', regulars: [],
     };
     const template = (input['event'] ?? {}) as Body;
@@ -959,11 +964,36 @@ export class Board {
     this.state.series.push(s);
     for (let n = 0; n < s.window; n++) {
       const start = this.occurrence(s, first, n);
+      if ((s.count && n >= s.count) || (s.until && start > s.until)) { s.status = 'ended'; break; }
       const e = this.createEvent(actor, g, { ...template, start, end: length ? start + length : 0 });
       e.series = s.id;
       e.occurrence = n + 1;
     }
     return s;
+  }
+
+  updateSeries(actor: number, id: number, input: Body): void {
+    if (!this.seriesView(actor, id).can_edit) throw forbid('Only hosts can change this series');
+    const s = this.state.series.find(x => x.id === id)!;
+    const count = Number(input['count'] ?? s.count), window = Number(input['window'] ?? s.window), until = Number(input['until'] ?? s.until);
+    if (!Number.isInteger(count) || count < 0 || count > 104 || !Number.isInteger(window) || window < 1 || window > 8 || !Number.isInteger(until) || until < 0) throw new Fail(400, 'bad_request', 'Invalid series limits');
+    Object.assign(s, { count, window, until });
+    const events = this.state.events.filter(e => e.series === id).sort((a, b) => a.occurrence - b.occurrence);
+    const first = events[0]; if (!first) return;
+    let n = Math.max(...events.map(e => e.occurrence));
+    if ((!until || until > this.now) && (!count || n < count)) s.status = 'active';
+    let ahead = events.filter(e => this.active(e) && e.start > this.now).length;
+    for (let attempts = 0; attempts < 64 && s.status === 'active' && ahead < window; attempts++, n++) {
+      const start = this.occurrence(s, first.start, n);
+      if ((count && n >= count) || (until && start > until)) { s.status = 'ended'; break; }
+      if (start <= this.now) continue;
+      const e: DemoEvent = { ...structuredClone(first), id: this.state.next.event++, rev: 1, status: first.status === 'draft' ? 'draft' : 'scheduled', start, end: first.end ? start + first.end - first.start : 0, created: this.now, updated: this.now, rsvp_by: first.rsvp_by ? start - (first.start - first.rsvp_by) : 0 };
+      this.state.events.push(e);
+      this.setGoing(e.id, e.created_by);
+      e.series = id; e.occurrence = n + 1;
+      for (const person of s.regulars) if (this.eligible(person, e)) this.setGoing(e.id, person);
+      ahead++;
+    }
   }
 
   seriesView(viewer: number, id: number) {

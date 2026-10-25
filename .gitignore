@@ -22,3 +22,6 @@ __pycache__/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+ui/test-results/
+ui/playwright-report/

@@ -1,3 +1,4 @@
+import { loadFeatureStyle } from '../feature-styles';
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { blankAnswer, guestLimit, KIND_INFO, RsvpInput, STATUS_LABEL, toggle, when } from 'party-core';
@@ -23,11 +24,11 @@ import { Theme } from '../theme';
         <h1 [class.struck]="e.status === 'cancelled'">{{ e.title }}</h1>
         @if (e.status === 'cancelled') { <p class="stop">{{ L.cancelledBanner }}</p> }
         @if (e.status === 'draft') { <p class="stop">{{ L.draftBanner }}</p> }
-        <p class="byline">{{ L.leadBy(v.host_names.join(' & '), v.group_name) }} · {{ e.start ? relative(e.start) : L.dateByVote }}</p>
+        <p class="byline">{{ L.leadBy(v.host_names.join(' & '), v.group_name) }} · {{ e.start ? relative(e.start) : e.modules.includes('when') ? L.dateByVote : 'Time not yet determined' }}</p>
         <div class="spread">
           <div class="columns body">
             <p class="drop">{{ e.about || L.noAbout }}</p>
-            @if (p.series) { <p><em>{{ L.regular(p.series.summary) }}</em></p> }
+            @if (p.series) { <p><a [routerLink]="['/series', p.series.id]">Series settings and regular attendance</a></p><p><em>{{ L.regular(p.series.summary) }}</em></p> }
             <h2 class="rule">{{ L.guestList }}</h2>
             <p>
               @for (r of attending(); track r.person; let last = $last) { <span class="smallcaps">{{ r.display_name }}</span>@if (r.plus) { {{ ' ' + L.with(r.plus) }} }@if (r.status === 'maybe') { <em> {{ L.perhaps }}</em> }@if (r.status === 'waitlist') { <em> {{ L.waiting }}</em> }{{ last ? '.' : ', ' }} }
@@ -36,15 +37,17 @@ import { Theme } from '../theme';
             @if (regrets().length) { <p class="small">{{ L.regrets(regrets().join(', ')) }}</p> }
           </div>
           <aside class="particulars">
-            <h2>{{ L.facts.title }}</h2>
+            <h2>{{ L.facts.title }}</h2><p><a [routerLink]="['/manage/events', e.id]">More event tools and answers</a></p>
             <dl>
-              <dt>{{ L.facts.when }}</dt><dd>{{ e.start ? when(e.start, e.end) : L.dateByVote }}</dd>
+              <dt>{{ L.facts.when }}</dt><dd>{{ e.modules.includes('when') && !e.start ? L.dateByVote : when(e.start, e.end) }}</dd>
               <dt>{{ L.facts.where }}</dt><dd>{{ where() }}</dd>
               <dt>{{ L.facts.admission }}</dt><dd>{{ e.cost || L.facts.free }}</dd>
               <dt>{{ L.facts.expected }}</dt><dd>{{ v.heads }}{{ e.capacity ? ' / ' + e.capacity : '' }}{{ v.maybe ? ' (+' + v.maybe + ')' : '' }}{{ v.waitlist ? ' · ' + v.waitlist + ' ⏳' : '' }}</dd>
               @if (e.rsvp_by) { <dt>{{ L.facts.replyBy }}</dt><dd>{{ when(e.rsvp_by) }}</dd> }
               @if (e.bring.length) { <dt>{{ L.facts.wanted }}</dt><dd>@for (s of e.bring; track s.id; let last = $last) { {{ s.name }} ({{ L.still(left(s.id, s.count)) }}){{ last ? '' : '; ' }} }</dd> }
             </dl>
+            @if (v.can_edit) { <p><a [routerLink]="['/events', e.id, 'edit']">Hosts and access · full editor</a></p> }
+            @if (e.map) { <p><a [href]="e.map" target="_blank" rel="noopener">Open map</a></p> }
             @if (v.can_edit && e.status !== 'cancelled' && e.status !== 'done') {
               <p class="small"><a routerLink="/new" [queryParams]="{ edit: e.id }">{{ L.correct }}</a> · <button type="button" class="tiny" (click)="cancel()">{{ L.spike }}</button></p>
             }
@@ -128,6 +131,8 @@ import { Theme } from '../theme';
   `,
 })
 export class EventScreen implements OnInit {
+  private readonly featureStyle = loadFeatureStyle('classic');
+
   readonly id = input.required<string>();
   readonly api = inject(Api);
   readonly theme = inject(Theme);

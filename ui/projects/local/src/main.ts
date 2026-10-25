@@ -59,6 +59,10 @@ class GlobalErrorHandler implements ErrorHandler {
 
 // Path routing: the board serves index.html for every extension-less path.
 const routes: Routes = [
+  { path: 'groups/:slug/members/:id', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/community').then(m => m.Person) },
+  { path: 'series/:id', canActivate: [signedIn], loadComponent: () => import('./app/pages/series').then(m => m.SeriesSettings) },
+  { path: 'groups/:slug/invite', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/community').then(x => x.GroupInvite) },
+  { path: 'people/:id', canActivate: [signedIn], loadComponent: () => import('../../ui-clubhouse/src/app/desk/community').then(x => x.Person) },
   { path: '', component: Home, canActivate: [signedIn], title: 'party' },
   { path: 'setup', component: Setup, canActivate: [setupOnly], title: 'Set up · party' },
   { path: 'signin', component: SignIn, canActivate: [signedOut], title: 'Sign in · party' },

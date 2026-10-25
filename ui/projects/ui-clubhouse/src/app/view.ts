@@ -5,6 +5,7 @@ const KEY = 'party-clubhouse:view';
 
 /** Desktop pages and their phone counterparts (and back). */
 const TO_PHONE: [RegExp, string][] = [
+  [/^\/people\/(\d+)$/, '/m/people/$1'],
   [/^\/e\/(\d+)/, '/m/e/$1'],
   [/^\/groups\/(?!new)([^/?]+)/, '/m/groups/$1'],
   [/^\/groups/, '/m/groups'],
@@ -15,6 +16,7 @@ const TO_PHONE: [RegExp, string][] = [
   [/^\/signin/, '/m/signin'],
 ];
 const TO_DESK: [RegExp, string][] = [
+  [/^\/m\/people\/(\d+)$/, '/people/$1'],
   [/^\/m\/e\/(\d+)/, '/e/$1'],
   [/^\/m\/groups\/(?!new)([^/?]+)/, '/groups/$1'],
   [/^\/m\/groups/, '/groups'],
@@ -47,9 +49,12 @@ export class View {
 
   /** On first load: a phone opening a desktop link lands on the deck (and vice versa). */
   settle(url: string): string | null {
-    const phone = url.startsWith('/m');
+    const phone = /^\/m(?:\/|$)/.test(url);
     const want = this.initial();
-    if (want === 'phone' && !phone) return map(url, TO_PHONE, '/m');
+    if (want === 'phone' && !phone) {
+      if (/^\/groups\/[^/]+\//.test(url)) return null;
+      return map(url, TO_PHONE, url === '/' ? '/m' : url);
+    }
     if (want === 'desk' && phone && read() === 'desk') return map(url, TO_DESK, '/');
     return null;
   }

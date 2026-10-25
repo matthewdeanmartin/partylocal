@@ -83,7 +83,7 @@ export class Front implements OnInit {
   dek(v: EventView): string {
     const e = v.event;
     const at = e.where_kind === 'tbd' ? 'at a place yet to be named' : `at ${e.place || 'a private residence'}`;
-    return e.start ? `${when(e.start, e.end)}, ${at}.` : `The date is to be settled by a vote of those attending, ${at}.`;
+    return e.start ? `${when(e.start, e.end)}, ${at}.` : `${e.modules.includes('when') ? 'The date is to be settled by a vote' : 'Time not yet determined'}, ${at}.`;
   }
 
   headcount(v: EventView): string {
@@ -185,8 +185,10 @@ export class Societies implements OnInit {
       <p class="kicker">The Society Pages</p>
       <h1 class="section-head">{{ g.name }}</h1>
       <p class="standfirst">{{ g.about || 'The society has not yet published a statement of aims.' }}</p>
-      <p class="byline">{{ count(g.members, 'member') }} · {{ g.kind }} · {{ join(g) }}</p>
+      <p><a [routerLink]="['/manage/groups', g.slug]">Members, requests and group tools</a></p><p class="byline">{{ count(g.members, 'member') }} · {{ g.kind }} · {{ join(g) }}</p>
       <div class="actions">
+        @if (g.can_manage) { <a [routerLink]="['/groups', g.slug, 'invite']">Invite people</a> }
+        @if (g.can_create_events) { <a [routerLink]="['/groups', g.slug, 'bulk']">Bulk add events</a> }
         @if (!g.my_status && g.join !== 'invite') { <button type="button" (click)="act('join')">{{ g.join === 'open' ? 'Become a member' : 'Apply for membership' }}</button> }
         @if (g.my_status === 'requested') { <span>Your application is under consideration.</span><button type="button" class="quiet" (click)="act('leave')">Withdraw it</button> }
         @if (g.my_status === 'active') { <button type="button" class="quiet" (click)="act('leave')">Resign membership</button> }
@@ -206,7 +208,7 @@ export class Societies implements OnInit {
         <aside class="sidebar">
           <h2 class="rule">The roll</h2>
           @for (m of p.members; track m.person) {
-            <p class="small"><span class="smallcaps">{{ m.display_name }}</span>, {{ m.status === 'requested' ? 'applicant' : role(m.role) }}
+            <p class="small"><a class="smallcaps" [routerLink]="['/groups', g.slug, 'members', m.person]">{{ m.display_name }}</a>, {{ m.status === 'requested' ? 'applicant' : role(m.role) }}
               @if (g.can_manage && m.status === 'requested') { <button type="button" class="tiny" (click)="admit(m.person)">admit</button> }</p>
           } @empty { <p class="small">The roll is private.</p> }
         </aside>
@@ -297,12 +299,13 @@ export class Notices implements OnInit {
 /** Who's Who: the people you can find, alphabetically. */
 @Component({
   selector: 'gz-whos-who',
+  imports: [RouterLink],
   template: `
     <h1 class="section-head">Who's Who</h1>
     <p class="standfirst">Residents and friends who have consented to be listed. <input type="search" class="blank" placeholder="look someone up" (input)="search($any($event.target).value)" aria-label="Search" /></p>
     <div class="columns directory">
       @for (p of people(); track p.id) {
-        <p class="entry"><span class="smallcaps">{{ p.display_name }}</span>@if (p.household_name) { , of {{ p.household_name }} }. {{ p.bio }}</p>
+        <p class="entry"><a class="smallcaps" [routerLink]="['/people', p.id]">{{ p.display_name }}</a>@if (p.household_name) { , of {{ p.household_name }} }. {{ p.bio }}</p>
       } @empty { <p>No one by that name is listed.</p> }
     </div>
   `,

@@ -9,7 +9,7 @@ import { Chat } from './chat';
  * message, a card inside one, or a chip to tap instead of typing.
  */
 @Component({
-  selector: 'party-root',
+  selector: 'party-chat',
   template: `
     <header>
       <span class="bot" aria-hidden="true">🎉</span>
@@ -153,9 +153,9 @@ import { Chat } from './chat';
       }
       <input #box [type]="chat.question()?.input === 'pin' ? 'password' : chat.question()?.input === 'number' ? 'number' : 'text'"
         [attr.inputmode]="chat.question()?.input === 'pin' || chat.question()?.input === 'number' ? 'numeric' : null"
-        [placeholder]="placeholder()" [value]="draft()" (input)="draft.set($any($event.target).value)" aria-label="Message"
+        [placeholder]="placeholder()" [value]="draft()" (input)="draft.set($any($event.target).value)" aria-label="Message" [disabled]="brain.starting()"
         [attr.autocomplete]="chat.question()?.input === 'pin' ? 'current-password' : 'off'" />
-      <button type="submit" [disabled]="!draft().trim()" aria-label="Send">➤</button>
+      <button type="submit" [disabled]="brain.starting() || !draft().trim()" aria-label="Send">➤</button>
     </form>
   `,
 })

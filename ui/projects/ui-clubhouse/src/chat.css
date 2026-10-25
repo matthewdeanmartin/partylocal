@@ -60,7 +60,7 @@
   .chips button.on { background: var(--chip-text); color: var(--chip); }
   .chips button.done { background: var(--accent); color: #fff; border-color: var(--accent); }
   .chips button.soft { border-style: dashed; opacity: .8; }
-  .card { background: var(--bot); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px #0002; width: min(440px, 80vw); margin: 0; padding: 0; }
+  .card { background: var(--bot); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px #0002; width: min(440px, 80vw); max-width: 100%; margin: 0; padding: 0; }
   .card > header { display: flex; gap: 10px; align-items: center; padding: 10px 12px; color: #fff; }
   .card h3 { margin: 0; font-size: 16px; }
   .card header small { opacity: .85; }

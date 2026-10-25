@@ -155,3 +155,6 @@ html[data-theme='clubhouse'] ch-desk .picker button.on { background: var(--red);
   ch-desk .console { height: 70dvh; }
   .chat-panel { right: 12px; bottom: 12px; }
 }
+
+html[data-theme='clubhouse'] ch-desk .contents .press:hover, html[data-theme='clubhouse'] ch-desk .contents .press:focus-visible { background: var(--ink); color: var(--paper); }
+ch-desk .profile-bio { white-space: pre-wrap; max-width: 75ch; }

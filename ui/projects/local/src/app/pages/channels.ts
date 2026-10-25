@@ -23,7 +23,8 @@ import { value } from './auth';
       }
       <form (submit)="saveMail($event)">
         <label>API key <small>xkeysib-…, from Brevo → SMTP &amp; API</small> <input autocomplete="off" (input)="mailKey.set(v($event))" /></label>
-        <label>Sender <small>a verified Brevo sender; empty = the first</small> <input type="email" (input)="mailFrom.set(v($event))" /></label>
+        <label>Sender <small>a verified Brevo sender; empty = the first</small> <input type="email" [value]="mailFrom()" (input)="mailFrom.set(v($event))" /></label>
+        <label>Sender name <input [value]="mailName()" (input)="mailName.set(v($event))" /></label>
         <div class="actions">
           <button type="submit" [disabled]="!mailKey()">Save and check</button>
           @if (mail()?.state !== 'off') { <button type="button" class="secondary" (click)="remove('mail')">Turn off</button> }
@@ -40,6 +41,7 @@ import { value } from './auth';
       }
       <form (submit)="saveBot($event)">
         <label>Instance <input placeholder="mastodon.social" [value]="botInstance()" (input)="botInstance.set(v($event))" /></label>
+        <label>Bot certificate <small>Choose each time you save; the board does not return this setting.</small><select required [value]="botTrust()" (change)="botTrust.set(v($event))"><option value="" disabled>Choose certificate trust</option><option value="public">public</option><option value="household">household CA</option></select></label>
         <label>Access token <small>from the bot account's Development page: read:notifications, read:statuses, write:statuses</small>
           <input autocomplete="off" (input)="botToken.set(v($event))" /></label>
         <label class="switch"><input type="checkbox" [checked]="botCommands()" (change)="botCommands.set(!botCommands())" /> Answer commands sent by DM</label>
@@ -66,6 +68,7 @@ import { value } from './auth';
         }
       </ul>
       <form class="row" (submit)="addProvider($event)">
+        <label>Button name <small>optional; defaults to the instance</small><input [value]="providerName()" (input)="providerName.set(v($event))" /></label>
         <label>Instance <input placeholder="mastodon.social" [value]="providerBase()" (input)="providerBase.set(v($event))" /></label>
         <label>Certificate <select (change)="providerTrust.set(v($event))"><option value="public">public</option><option value="household">household CA</option></select></label>
         <button type="submit" class="secondary">Add</button>
@@ -118,6 +121,9 @@ export class Channels implements OnInit {
   readonly dropped = signal(0);
   readonly inbox = signal<InboxEntry[]>([]);
   readonly mailKey = signal('');
+  readonly mailName = signal('party');
+  readonly botTrust = signal('');
+  readonly providerName = signal('');
   readonly mailFrom = signal('');
   readonly botInstance = signal('mastodon.social');
   readonly botToken = signal('');
@@ -136,6 +142,8 @@ export class Channels implements OnInit {
 
   async ngOnInit(): Promise<void> {
     await this.load();
+    const mail = this.mail();
+    if (mail && mail.state !== 'off') { this.mailFrom.set(mail.sender_email); this.mailName.set(mail.sender_name); }
     const b = this.bot();
     if (b && b.state !== 'off') {
       this.botInstance.set(b.instance);
@@ -187,12 +195,13 @@ export class Channels implements OnInit {
 
   saveMail(e: Event): Promise<void> {
     e.preventDefault();
-    return this.act(() => this.api.send('PUT', '/api/v1/admin/mail', { api_key: this.mailKey(), sender_email: this.mailFrom(), sender_name: 'party' }, 'MailView'));
+    return this.act(() => this.api.send('PUT', '/api/v1/admin/mail', { api_key: this.mailKey(), sender_email: this.mailFrom(), sender_name: this.mailName() }, 'MailView'));
   }
 
   saveBot(e: Event): Promise<void> {
     e.preventDefault();
-    const body = { instance: this.botInstance(), token: this.botToken(), trust: 'public', commands: this.botCommands(), poll_secs: this.botPoll() };
+    if (!['public', 'household'].includes(this.botTrust())) { this.error.set('Choose the bot certificate trust before saving.'); return Promise.resolve(); }
+    const body = { instance: this.botInstance(), token: this.botToken(), trust: this.botTrust(), commands: this.botCommands(), poll_secs: this.botPoll() };
     return this.act(() => this.api.send('PUT', '/api/v1/admin/bot', body, 'BotView'));
   }
 
@@ -208,7 +217,7 @@ export class Channels implements OnInit {
 
   addProvider(e: Event): Promise<void> {
     e.preventDefault();
-    return this.act(() => this.api.send('POST', '/api/v1/admin/providers', { name: '', base: this.providerBase(), trust: this.providerTrust() }, 'ProviderList'));
+    return this.act(() => this.api.send('POST', '/api/v1/admin/providers', { name: this.providerName(), base: this.providerBase(), trust: this.providerTrust() }, 'ProviderList'));
   }
 
   deleteProvider(id: number): Promise<void> {
